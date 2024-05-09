@@ -1,0 +1,13 @@
+# directories and files
+/Listings
+/Objects
+.vscode
+/test
+web_test
+
+# Compiled source
+*obj
+*lnp
+*uvopt
+*uvgui.*
+
