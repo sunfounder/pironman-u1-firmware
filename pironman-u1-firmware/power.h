@@ -8,7 +8,7 @@ DAC:
     CHG_CRNT_CTRL -> IO17
 
 INPUT:
-    ALWAYS_ON -> IO39
+    DEFAULT_ON -> IO39
     BTN -> IO21
     #VBS_DT -> IO6
 
@@ -30,7 +30,7 @@ ADC:
 #define ADC_RAW_VOLT 0 // for debug: to show raw voltage (no gain)
 
 // --- define pins ---
-#define ALWAYS_ON_PIN 39
+#define DEFAULT_ON_PIN 39
 #define POWER_SOURCE_PIN 42
 
 #define DC_EN_PIN 10
@@ -115,7 +115,7 @@ extern uint16_t outputCrntAvg;
 
 // --- functions ---
 void powerIoInit(void);
-uint8_t isAlwaysOn();
+uint8_t isDefaultOn();
 uint8_t checkPowerSouce();
 void powerOutOpen();
 void powerOutClose();

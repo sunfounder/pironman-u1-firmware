@@ -45,7 +45,7 @@ uint16_t outputVoltAvg = 0;
 uint16_t outputCrntAvg = 0;
 /* ----------------------------------------------------------------
 INPUT:
-    ALWAYS_ON -> IO39
+    DEFAULT_ON -> IO39
     BTN -> IO21
 
 OUTPUT:
@@ -56,7 +56,7 @@ OUTPUT:
 ----------------------------------------------------------------*/
 void powerIoInit(void)
 {
-    pinMode(ALWAYS_ON_PIN, INPUT);
+    pinMode(DEFAULT_ON_PIN, INPUT);
     pinMode(POWER_SOURCE_PIN, INPUT);
 
     pinMode(DC_EN_PIN, OUTPUT);
@@ -68,10 +68,10 @@ void powerIoInit(void)
     pinMode(BAT_EN_PIN, HIGH);
 }
 
-uint8_t isAlwaysOn()
+uint8_t isDefaultOn()
 {
-    // return digitalRead(ALWAYS_ON_PIN);
-    return !digitalRead(ALWAYS_ON_PIN); // reverse
+    // return digitalRead(DEFAULT_ON_PIN);
+    return !digitalRead(DEFAULT_ON_PIN); // reverse
 }
 
 uint8_t checkPowerSouce()
