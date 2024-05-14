@@ -484,7 +484,7 @@ void webPageBegin(WebpageConfig *webConfig)
     //           });
 
 // js
-#if 0
+#if 1
     server.on("/static/js/main.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
@@ -572,7 +572,7 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/api/v1.0/get-config", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-#if 0
+#if 1
                   String json = "{";
                   json += "\"status\":true";
                   json += ",\"data\":{";
@@ -601,7 +601,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += "}}";
 
                   request->send(200, "application/json", json);
-                  //   request->send(SPIFFS, "/config.json", "application/json");
+        //   request->send(SPIFFS, "/config.json", "application/json");
 #else
                   request->send(200, "application/json", okJson);
 #endif
