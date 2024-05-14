@@ -9,9 +9,9 @@
 #define LED_PWM_FREQ 10000
 #define LED_PWM_RESOLUTION 8 // 1-16bit (8bit->0~255)
 
-#define LED_R_PIN 26
+#define LED_R_PIN 38
 #define LED_G_PIN 33
-#define LED_B_PIN 38
+#define LED_B_PIN 26
 
 #define LED_R_PWM_CHANNEL 0
 #define LED_G_PWM_CHANNEL 1
