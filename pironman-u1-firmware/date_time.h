@@ -14,3 +14,4 @@ time_t getTimeSample();
 void getTimeSampleAndDate(time_t timesample, tm timeinfo);
 void timeavailable(struct timeval *t);
 void ntpTimeInit();
+void ntpTimeSync();
