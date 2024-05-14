@@ -86,10 +86,10 @@ ADC:
 
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.1"
+#define VERSION "0.0.6"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
-#define VERSION_MICRO 1
+#define VERSION_MICRO 6
 
 #define BOARD_ID 0x00
 
@@ -393,9 +393,6 @@ void updatePowerData()
     dataDoc["data"]["output_state"] = outputState;
     dataDoc["data"]["power_source"] = powerSource;
 
-    dataDoc["data"]["shutdown_percentage"] = 20;
-    dataDoc["data"]["power_off_percentage"] = 10;
-
     powerDataFilter();
 }
 
@@ -416,12 +413,24 @@ void shutdownBatteryPctHandler()
     {
         shutdown_pct = settingBuffer[9];
         dataBuffer[143] = shutdown_pct;
+
+        prefs.begin(PREFS_NAMESPACE); // namespace
+        prefs.putUChar(SHUTDOWN_PCT_KEYNAME, shutdown_pct);
+        prefs.end();
+
+        config.shutdownPct = shutdown_pct;
     }
 
     if (poweroff_pct != settingBuffer[10])
     {
         poweroff_pct = settingBuffer[10];
         dataBuffer[144] = poweroff_pct;
+
+        prefs.begin(PREFS_NAMESPACE); // namespace
+        prefs.putUChar(POWEROFF_PCT_KEYNAME, poweroff_pct);
+        prefs.end();
+
+        config.poweroffPct = poweroff_pct;
     }
 }
 
@@ -673,7 +682,6 @@ void setup()
 
     // -- -mDNS &webpage-- -
     Serial.println();
-    info("mDNS start (%s)...", config.hostname);
     mDNSInit(config.hostname);
 
     info("Webpage start ...");
@@ -729,6 +737,8 @@ void loop()
 
     if (time1000Cnt > 1000)
     {
+        Serial.printf("free: %d\n", ESP.getFreeHeap());
+
         // mqttClient.publish("test", "esp32-spc");
         saveDataIntoSD();
         time1000Cnt = 0;
