@@ -1,5 +1,7 @@
 #include "webpage.h"
 
+#define ESP_ASYNC_TCP_MAX_CONNECTIONS 1
+#define ESP32
 /*
 https://github.com/me-no-dev/ESPAsyncWebServer
 */
@@ -43,6 +45,7 @@ WiFiHelper mywifi;
 // ----------------------------------------------------------------
 void mDNSInit(String hostname)
 {
+    info("mDNS start: %s", hostname.c_str());
     MDNS.begin(hostname);
 }
 
@@ -57,11 +60,21 @@ void _setUpdaterError()
 
 void setWiFiConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
-    Serial.println("setting STA wifi");
+    debug("setting STA wifi");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
     deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("sta_switch") ||
+        !doc.containsKey("sta_ssid") ||
+        !doc.containsKey("sta_psk"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
     bool sw = doc["sta_switch"];
     String ssid = doc["sta_ssid"];
     String psk = doc["sta_psk"];
@@ -86,44 +99,53 @@ void setWiFiConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     strlcpy(config.staSSID, ssid.c_str(), sizeof(config.staSSID));
     strlcpy(config.staPSK, psk.c_str(), sizeof(config.staPSK));
 
-    Serial.printf("config STA -> switch: %d, ssid: %s, psk: %s\n", config.staENABLE, config.staSSID, config.staPSK);
+    info("config STA -> switch: %d, ssid: %s, psk: %s\n", config.staENABLE, config.staSSID, config.staPSK);
 
+    // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
 void setWiFiRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
-    Serial.println("restart STA wifi");
+    debug("restart STA wifi");
 
-    Serial.printf("heap free: %d", ESP.getFreeHeap());
-
-    // response before operation
+    // --- response before operation ---
     request->send_P(200, "application/json", okJson);
     delay(200);
 
     // --- operate  ---
     if (config.staENABLE)
     {
-        Serial.printf("restart STA -> ssid: %s, psk: %s\n", config.staSSID, config.staPSK);
+        info("restart STA -> ssid: %s, psk: %s\n", config.staSSID, config.staPSK);
+        WiFi.enableSTA(true);
         WiFi.begin(config.staSSID, config.staPSK);
     }
     else
     {
-        Serial.println("close STA");
+        info("close STA");
         WiFi.enableSTA(false);
     }
 }
 
 void setAPConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
-    Serial.println("setting AP");
+    debug("setting AP");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
     deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("ap_ssid") || !doc.containsKey("ap_psk"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
     String ssid = doc["ap_ssid"];
     String psk = doc["ap_psk"];
     doc.clear();
+
     // --- copy the config ---
     prefs.begin(PREFS_NAMESPACE); // namespace
     prefs.putString(AP_SSID_KEYNAME, ssid);
@@ -133,37 +155,54 @@ void setAPConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     strlcpy(config.apSSID, ssid.c_str(), sizeof(config.apSSID));
     strlcpy(config.apPSK, psk.c_str(), sizeof(config.apPSK));
 
-    Serial.printf("config AP -> ssid: %s, psk: %s\n", config.apSSID, config.apPSK);
+    info("config AP -> ssid: %s, psk: %s\n", config.apSSID, config.apPSK);
 
+    // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
 void setAPRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
-    Serial.println("restart AP");
+    debug("restart AP");
+
+    // --- response before operation ---
+    request->send_P(200, "application/json", okJson);
+    delay(200);
 
     // --- operate  ---
-    Serial.printf("setting AP -> ssid: %s, psk: %s\n", config.apSSID, config.apPSK);
+    info("setting AP -> ssid: %s, psk: %s\n", config.apSSID, config.apPSK);
     WiFi.enableAP(true);
     WiFi.softAP(config.apSSID, config.apPSK);
 }
 
 void setOutputHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
+    debug("setting Output");
+
+    // --- convert into json ---
     DynamicJsonDocument doc(256);
     deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("switch"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
     uint8_t sw = doc["switch"];
     doc.clear();
 
-    Serial.printf("setting Output: %d\n", sw);
+    // --- operate  ---
+    info("setting Output: %d\n", sw);
     switch (sw)
     {
     case 0:
-        requestShutDown(3); // web control shutdown request
-        rgbMode = RGB_MODE_WAIT_SHUTDOWN;
+        powerOutClose();
         break;
     case 1:
-        powerOutClose();
+        requestShutDown(3); // web control shutdown request
+        rgbMode = RGB_MODE_WAIT_SHUTDOWN;
         break;
     case 2:
         powerOutOpen();
@@ -172,24 +211,160 @@ void setOutputHandle(AsyncWebServerRequest *request, uint8_t *data)
         break;
     }
 
+    // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
-void setTimeSyncHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setAutoTimeHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
+    debug("setting AutoTime");
+
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("enable"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    bool _enable = doc["enable"];
+    doc.clear();
+
+    // --- copy the config ---
+    prefs.begin(PREFS_NAMESPACE);
+    if (_enable)
+    {
+        prefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 1);
+
+        info("ntp time sync now (%s)", config.ntpServe);
+        ntpTimeSync();
+    }
+    else
+    {
+        prefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 0);
+    }
+
+    config.autoTimeEnable = prefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
+    prefs.end();
+
+    // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
-// ----------------------------------------------------------------
+void setTimestampHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+    if (!doc.containsKey("timestamp"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    uint64_t _timesample = doc["timestamp"];
+    doc.clear();
+
+    // --- operate  ---
+    info("set Time: %d\n", _timesample);
+
+    struct timeval tv;
+    tv.tv_sec = _timesample;
+    tv.tv_usec = 0;
+    settimeofday(&tv, nullptr);
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+void setTimeZoneHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("timezone"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    String tz = doc["timezone"];
+    doc.clear();
+
+    // --- copy the config ---
+    prefs.begin(PREFS_NAMESPACE); // namespace
+    prefs.putString(TIME_ZONE_KEYNAME, tz);
+    prefs.end();
+
+    strlcpy(config.timezone, tz.c_str(), sizeof(config.timezone));
+
+    // --- operate ---
+    Serial.printf("set TimeZone: %s", config.timezone);
+    setenv("TZ", config.timezone, 1);
+    tzset();
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+void setNTPServerHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("ntp_server"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    String _ntp_server = doc["ntp_server"];
+    doc.clear();
+
+    // --- copy the config ---
+    prefs.begin(PREFS_NAMESPACE); // namespace
+    prefs.putString(NTP_SERVER_KEYNAME, _ntp_server);
+    prefs.end();
+
+    strlcpy(config.ntpServe, _ntp_server.c_str(), sizeof(config.ntpServe));
+
+    // --- operate ---
+    info("set ntp_server: %s", config.ntpServe);
+    info("ntp time sync now (%s)", config.ntpServe);
+    ntpTimeSync();
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+// -----------------------
 extern uint8_t settingBuffer[];
 
 void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
+    // --- convert into json ---
     DynamicJsonDocument doc(256);
     deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("shutdown-percentage"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
     uint8_t pct = doc["shutdown-percentage"];
     doc.clear();
 
+    // --- operate  ---
     if (pct > 100)
     {
         pct = 100;
@@ -197,23 +372,7 @@ void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
     Serial.printf("sett shutdown-percentage: %d\n", pct);
     settingBuffer[9] = pct;
 
-    request->send_P(200, "application/json", okJson);
-}
-
-void setPoweroffPctHandle(AsyncWebServerRequest *request, uint8_t *data)
-{
-    DynamicJsonDocument doc(256);
-    deserializeJson(doc, (const char *)data);
-    uint8_t pct = doc["shutdown-percentage"];
-    doc.clear();
-
-    if (pct > 100)
-    {
-        pct = 100;
-    }
-    Serial.printf("sett shutdown-percentage: %d\n", pct);
-    settingBuffer[9] = pct;
-
+    // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
@@ -221,7 +380,7 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size
 {
     if (!index)
     {
-        Serial.println("Update");
+        info("OTA ....");
         content_len = request->contentLength();
         // if filename includes spiffs, update the spiffs partition
         if (filename.indexOf("filesystem") > -1)
@@ -255,30 +414,22 @@ void handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size
         }
         else
         {
-            Serial.println("Update complete");
+            info("OTA completed");
         }
     }
 }
 
-// void webPageBegin(uint32_t *data_merge_fuction)
-// void webPageBegin()
 void webPageBegin(WebpageConfig *webConfig)
 {
     webpageConfig = webConfig;
-
-    // Serial.printf("webpageConfig pointer: %p\n", webpageConfig);
-    // Serial.printf("onData pointer: %p\n", webpageConfig->onData);
-    // Serial.printf("user_onData pointer: %p\n", user_onData);
-    // Serial.printf("version2: %s\n", webpageConfig->version);
-
     currentVersion = webpageConfig->version;
     user_onData = webpageConfig->onData;
 
-    if (!SPIFFS.begin())
-    {
-        Serial.println("An Error has occurred while mounting SPIFFS");
-        // return;
-    }
+    // if (!SPIFFS.begin())
+    // {
+    //     Serial.println("An Error has occurred while mounting SPIFFS");
+    //     return;
+    // }
 
     // ------------------ repsonse header -------------------
     DefaultHeaders::Instance().addHeader("Access-Control-Allow-Origin", "*");
@@ -290,41 +441,94 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  Serial.println("server.on /");
-                  request->send(200, "text/html", index_html);
-                  //   request->send(SPIFFS, "/www/spc_dashboard.html", "text/html");
+                  String _ip = request->client()->remoteIP().toString();
+                  debug("remoteIP: %s", _ip.c_str());
+
+                  //   Serial.printf("free: %d\n", ESP.getFreeHeap());
+
+                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len);
+                  response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "no-cache");
+                  request->send(response);
+
+                  //   request->send(SPIFFS, "/www/index.html", "text/html");
               });
     // css
     server.on("/index.css", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  request->send(200, "text/css", index_css);
-                  //   request->send(SPIFFS, "/www/styles.css", "text/css");
+                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", index_css_gz, index_css_gz_len);
+                  response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
+                  request->send(response);
+
+                  //   request->send(SPIFFS, "/www/index.css", "text/css");
               });
     server.on("/static/css/main.css", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
                   AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", main_css_gz, main_css_gz_len);
                   response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
                   request->send(response);
 
                   //   request->send(SPIFFS, "/www/styles.css", "text/css");
               });
-    // js
+
+    //
+
+    // server.on("/asset-manifest.json", HTTP_GET,
+    //           [](AsyncWebServerRequest *request)
+    //           {
+    //               request->send_P(200, "application/json", asset_manifest);
+    //           });
+
+// js
+#if 0
     server.on("/static/js/main.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
                   AsyncWebServerResponse *response = request->beginResponse_P(200, "text/javascript", main_js_gz, main_js_gz_len);
                   response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
                   request->send(response);
 
                   //   request->send(SPIFFS, "/www/script.js", "text/javascript");
               });
-    // ico
+#else
+    server.on("/static/js/main.js", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  AsyncWebServerResponse *response = request->beginChunkedResponse(
+                      "text/javascript",
+                      [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
+                      {
+                          //   maxLen = MAX_CHUNK_SIZE;
+                          if (main_js_gz_len - index >= maxLen)
+                          {
+                              memcpy(buffer, main_js_gz + index, maxLen);
+                              return maxLen;
+                          }
+                          else
+                          { // last chunk and then 0
+                              memcpy(buffer, main_js_gz + index, main_js_gz_len - index);
+                              return main_js_gz_len - index;
+                          }
+                      });
+                  response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
+                  request->send(response);
+              });
+#endif
+    // favicon
     server.on("/favicon.ico", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  request->send(200, "text/plain", "null");
+                  AsyncWebServerResponse *response = request->beginResponse_P(200, "image/x-icon", favicon_ico_gz, favicon_ico_gz_len);
+                  response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
+                  request->send(response);
+
                   //   request->send(SPIFFS, "/www/favicon.ico", "text/plain");
               });
 
@@ -335,7 +539,7 @@ void webPageBegin(WebpageConfig *webConfig)
         {
             // String url = request->url();
             // Serial.printf("APINotFound: %s\n", url);
-            request->send(200, "application/json", apiNotFoundJson);
+            request->send_P(200, "application/json", apiNotFoundJson);
         });
 
     // version
@@ -354,10 +558,7 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/api/v1.0/get-device-info", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  //   Serial.println("get-device-info");
-
-                  request->send(200, "application/json", deviceInfoJson);
-                  //   request->send(SPIFFS, "/device_info.json", "application/json");
+                  request->send_P(200, "application/json", deviceInfoJson);
               });
 
     // test
@@ -371,6 +572,7 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/api/v1.0/get-config", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
+#if 0
                   String json = "{";
                   json += "\"status\":true";
                   json += ",\"data\":{";
@@ -379,11 +581,11 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += ",\"sta_ssid\":\"" + String(config.staSSID) + "\"";
                   json += "}";
                   json += ",\"system\":{";
-                  json += "\"shutdown_percentage\":" + String(20);
-                  json += ",\"power_off_percentage\":" + String(10);
+                  json += "\"shutdown_percentage\":" + String(config.shutdownPct);
+                  json += ",\"power_off_percentage\":" + String(config.poweroffPct);
                   json += ",\"timestamp\":" + String(getTimeSample());
                   json += ",\"timezone\":\"" + String(config.timezone) + "\"";
-                  json += ",\"auto_time_switch\":true";
+                  json += ",\"auto_time_switch\":" + String(config.autoTimeEnable ? "true" : "false");
                   json += ",\"ntp_server\":\"" + String(config.ntpServe) + "\"";
                   json += ",\"mac_address\":\"" + String(WiFi.macAddress()) + "\"";
                   json += ",\"ip_address\":\"" + WiFi.localIP().toString() + "\"";
@@ -400,13 +602,15 @@ void webPageBegin(WebpageConfig *webConfig)
 
                   request->send(200, "application/json", json);
                   //   request->send(SPIFFS, "/config.json", "application/json");
+#else
+                  request->send(200, "application/json", okJson);
+#endif
               });
 
     // get-history
     server.on("/api/v1.0/get-history", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  //   Serial.println("get-history");
                   request->send(200, "application/json", user_onData());
               });
 
@@ -458,7 +662,7 @@ void webPageBegin(WebpageConfig *webConfig)
               [](AsyncWebServerRequest *request)
               {
                   WiFi.scanNetworks(true);
-                  request->send(200, "application/json", startScanJson);
+                  request->send_P(200, "application/json", startScanJson);
               });
 
     // get-wifi-scan
@@ -470,17 +674,17 @@ void webPageBegin(WebpageConfig *webConfig)
                   {
                       Serial.println("no scanning");
                       //   WiFi.scanNetworks(true);
-                      request->send(200, "application/json", noscanningJson);
+                      request->send_P(200, "application/json", noscanningJson);
                   }
                   else if (n == -1)
                   {
                       Serial.println("scanning");
-                      request->send(200, "application/json", scanningJson);
+                      request->send_P(200, "application/json", scanningJson);
                   }
                   else if (0)
                   {
                       Serial.println("no WiFi found");
-                      request->send(200, "application/json", noWiFiFoundJson);
+                      request->send_P(200, "application/json", noWiFiFoundJson);
                   }
                   else if (n)
                   {
@@ -560,6 +764,17 @@ void webPageBegin(WebpageConfig *webConfig)
 
                   request->send(200, "application/json", json);
               });
+    // get-default-on
+    server.on("/api/v1.0/get-default-on", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  String json = "{";
+                  json += "\"status\":true";
+                  json += ",\"data\":" + String(isDefaultOn() ? "true" : "false");
+                  json += "}";
+
+                  request->send(200, "application/json", json);
+              });
 
     // ----- RequestBody (client post) -----
     server.onRequestBody(
@@ -600,23 +815,44 @@ void webPageBegin(WebpageConfig *webConfig)
                 Serial.printf("[REQUEST][set-ap-restart] %s\n", (const char *)data);
                 setAPRestartHandle(request, data);
             }
-            // set-time-sync
-            else if (request->url() == "/api/v1.0/set-time-sync")
-            {
-                Serial.printf("[REQUEST][set-time-sync] %s\n", (const char *)data);
-                setTimeSyncHandle(request, data);
-            }
             // set-shutdown-percentage
             else if (request->url() == "/api/v1.0/set-shutdown-percentage")
             {
-                Serial.printf("[REQUEST][set-time-sync] %s\n", (const char *)data);
+                Serial.printf("[REQUEST][set-shutdown-percentage] %s\n", (const char *)data);
                 setShutdownPctHandle(request, data);
             }
-            // set-power-off-percentage
-            else if (request->url() == "/api/v1.0/set-power-off-percentage")
+            // set-auto-time
+            else if (request->url() == "/api/v1.0/set-auto-time")
             {
-                Serial.printf("[REQUEST][set-time-sync] %s\n", (const char *)data);
-                setPoweroffPctHandle(request, data);
+                Serial.printf("[REQUEST][set-auto-time] %s\n", (const char *)data);
+                setAutoTimeHandle(request, data);
+            }
+            // set-timestamp
+            else if (request->url() == "/api/v1.0/set-timestamp")
+            {
+                Serial.printf("[REQUEST][set-timestamp] %s\n", (const char *)data);
+                setTimestampHandle(request, data);
+            }
+            // set-timezone
+            else if (request->url() == "/api/v1.0/set-timezone")
+            {
+                Serial.printf("[REQUEST][set-timezone] %s\n", (const char *)data);
+                setTimeZoneHandle(request, data);
+            }
+            // set-ntp-server
+            else if (request->url() == "/api/v1.0/set-ntp-server")
+            {
+                Serial.printf("[REQUEST][set-ntp-server] %s\n", (const char *)data);
+                setNTPServerHandle(request, data);
+            }
+            // set-restart
+            else if (request->url() == "/api/v1.0/set-restart")
+            {
+                Serial.printf("[REQUEST][set-restart] %s\n", (const char *)data);
+                request->send_P(200, "application/json", okJson);
+                delay(100);
+                Serial.printf("restart now\n");
+                ESP.restart();
             }
         });
 
@@ -636,8 +872,6 @@ void webPageBegin(WebpageConfig *webConfig)
             else
             {
                 request->send_P(200, "application/json", okJson);
-                delay(100);
-                ESP.restart();
             }
         },
         [](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data,

@@ -11,10 +11,12 @@
 #include "www_source/index_css.h"
 #include "www_source/main_js.h"
 #include "www_source/main_css.h"
+#include "www_source/favicon_ico.h"
 #include "www_source/webpage_static_data.h"
+#include "www_source/asset_manifest.h"
 // ----------------------------------------------------------------
 #define WEB_PORT 34001
-
+#define MAX_CHUNK_SIZE 4096 // 4k
 struct WebpageConfig
 {
     String version;
