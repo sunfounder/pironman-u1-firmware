@@ -2,6 +2,8 @@
 #include <ESP.h>
 
 static const char okJson[] PROGMEM = R"({"status":true,"data":"OK"})";
+static const char failJson[] PROGMEM = R"({"status":false,"error":"Fail"})";
+static const char invalidKeyJson[] PROGMEM = R"({"status":false,"error":"Invalid Key"})";
 static const char nullJson[] PROGMEM = R"({"status":true,"data":[]})";
 static const char apiNotFoundJson[] PROGMEM = R"({"status":false,"error":"APINotFound"})";
 static const char startScanJson[] PROGMEM = R"({"status":true,"data":"start scanning"})";
@@ -52,7 +54,9 @@ static const char deviceInfoJson[] PROGMEM = R"({
         "sd_card_usage",
         "ota_auto",
         "ota_manual",
-        "mqtt"
+        "mqtt",
+        "default_on",
+        "restart"
     ]
 }
 })";
