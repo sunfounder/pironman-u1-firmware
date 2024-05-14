@@ -16,8 +16,11 @@ void loadPreferences()
     strlcpy(config.staPSK, prefs.getString(STA_PSK_KEYNAME, DEFAULT_STA_PSK).c_str(), sizeof(config.staPSK));
     strlcpy(config.apSSID, prefs.getString(AP_SSID_KEYNAME, DEFAULT_AP_SSID).c_str(), sizeof(config.apSSID));
     strlcpy(config.apPSK, prefs.getString(AP_PSK_KEYNAME, DEFAULT_AP_PSK).c_str(), sizeof(config.apPSK));
+    config.autoTimeEnable = prefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
     strlcpy(config.timezone, prefs.getString(TIME_ZONE_KEYNAME, DEFAULT_TIME_ZONE).c_str(), sizeof(config.apPSK));
     strlcpy(config.ntpServe, prefs.getString(NTP_SERVER_KEYNAME, DEFAULT_NTP_SERVER).c_str(), sizeof(config.apPSK));
+    config.shutdownPct = prefs.getUChar(SHUTDOWN_PCT_KEYNAME, DEFAULT_SHUTDOWN_PCT);
+    config.poweroffPct = prefs.getUChar(POWEROFF_PCT_KEYNAME, DEFAULT_POWEROFF_PCT);
 
     prefs.end();
 
@@ -27,8 +30,10 @@ void loadPreferences()
     info("sta.psk: %s", config.staPSK);
     info("ap.ssid: %s", config.apSSID);
     info("ap.psk: %s", config.apPSK);
-    info("timezone: %s", config.timezone);
+    info("autoTimeEnable: %d", config.autoTimeEnable);
     info("ntpServe: %s", config.ntpServe);
+    info("shutdownPct: %d", config.shutdownPct);
+    info("poweroffPct: %d", config.poweroffPct);
 }
 
 bool readConfigFormSD(bool isDelete)
