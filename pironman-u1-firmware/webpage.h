@@ -16,7 +16,6 @@
 #include "www_source/asset_manifest.h"
 // ----------------------------------------------------------------
 #define WEB_PORT 34001
-#define MAX_CHUNK_SIZE 4096 // 4k
 struct WebpageConfig
 {
     String version;

@@ -484,7 +484,7 @@ void webPageBegin(WebpageConfig *webConfig)
     //           });
 
 // js
-#if 1
+#if 0
     server.on("/static/js/main.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
@@ -503,7 +503,6 @@ void webPageBegin(WebpageConfig *webConfig)
                       "text/javascript",
                       [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
                       {
-                          //   maxLen = MAX_CHUNK_SIZE;
                           if (main_js_gz_len - index >= maxLen)
                           {
                               memcpy(buffer, main_js_gz + index, maxLen);
