@@ -54,7 +54,6 @@ static const char deviceInfoJson[] PROGMEM = R"({
         "sd_card_usage",
         "ota_auto",
         "ota_manual",
-        "mqtt",
         "default_on",
         "restart"
     ]
