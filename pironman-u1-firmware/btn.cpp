@@ -29,6 +29,17 @@ uint16_t keyScanTimeCnt = 0;
 uint16_t longPressTimeCnt = 0;
 uint16_t doulePressTimeCnt = 0;
 
+void keyStateReset(void)
+{
+    hasPressed = 0;
+    keyScanTimeCnt = 0;
+    longPressTimeCnt = 0;
+    doulePressTimeCnt = 0;
+
+    keyMachineState = BTN_UP;
+    keyState = Released;
+}
+
 void keyStateHandler()
 {
     if (keyScanTimeCnt >= KeyScanInterval)

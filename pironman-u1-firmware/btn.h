@@ -37,3 +37,4 @@ void btnInit();
 uint8_t btnRead();
 
 void keyStateHandler(void);
+void keyStateReset();
