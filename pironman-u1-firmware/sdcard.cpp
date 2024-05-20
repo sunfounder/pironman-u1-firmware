@@ -1,5 +1,6 @@
 #include "sdcard.h"
 
+bool hasSD = 0;
 SPIClass *sdSpi = NULL;
 
 bool SD_Init(void)
@@ -12,6 +13,7 @@ bool SD_Init(void)
     if (!SD.begin(SD_SS, *sdSpi, SD_SPI_FREQ, SD_MOUNT_POINT, SD_MAX_FILES, false))
     {
         Serial.println("SD card Mount Failed");
+        hasSD = false;
         return false;
     }
 
@@ -45,5 +47,33 @@ bool SD_Init(void)
     Serial.printf("Used space: %lluMB\n", SD.usedBytes() / (1024 * 1024));
     Serial.println();
 
+    hasSD = true;
     return true;
+}
+
+void sdDetectEvent()
+{
+    debug("sdDetectEvent: ");
+    if (checkSD_DT())
+    {
+        debug("SD_DT = true\n");
+        // SD_Init();
+    }
+    else
+    {
+        debug("SD_DT = false\n");
+        hasSD = false;
+        // SD.end();
+    }
+}
+
+void sdDetectEventInit()
+{
+    pinMode(SD_DT, INPUT_PULLUP);
+    attachInterrupt(digitalPinToInterrupt(SD_DT), sdDetectEvent, CHANGE);
+}
+
+bool checkSD_DT()
+{
+    return !digitalRead(SD_DT); // reverse
 }
