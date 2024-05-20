@@ -99,4 +99,6 @@ void ntpTimeSync()
     sntp_set_time_sync_notification_cb(timeavailable);
     sntp_servermode_dhcp(1);
     configTime(0, 0, config.ntpServe);
+    setenv("TZ", config.timezone, 1);
+    tzset();
 }
