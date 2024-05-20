@@ -31,8 +31,6 @@ typedef enum {
 #define AP WIFI_MODE_AP
 #define APSTA WIFI_MODE_MAX
 
-#define FIRST_EEPROM_CODE 0x58 // check if the first init
-
 class WiFiHelper
 {
 public:
