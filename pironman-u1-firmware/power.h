@@ -3,6 +3,9 @@
 #include <Arduino.h>
 #include "esp32-hal-gpio.h"
 #include "esp32-hal-adc.h"
+#include "btn.h"
+#include <Preferences.h>
+#include "debug.h"
 /* ----------------------------------------------------------------
 DAC:
     CHG_CRNT_CTRL -> IO17
@@ -13,8 +16,10 @@ INPUT:
     #VBS_DT -> IO6
 
 OUTPUT:
+    BAT_EN -> IO11
     DC_EN -> IO15
     USB_EN -> IO16
+    PI5_BTN -> IO41
 
 ADC:
     CHG_3V3 -> IO1
@@ -61,13 +66,28 @@ ADC:
 #define OUTPUT_CURRENT_GAIN 2.0
 
 // --- global variables ---
-#define USB_MIN_VOLTAGE 4600        // mV
-#define OP_PROTECT_SENSITIVITY 5000 // Compare with powerSourceVoltage
+#define USB_MIN_VOLTAGE 2500 // mv, whether usb is plugged in or not
 
-#define MAX_BAT_VOLTAGE 8400 // mV
-#define MIN_BAT_VOLTAGE 6200
+#define BAT_MIN_VOLTAGE 5800          // mv, whether bat is plugged in or not
+#define BAT_CAPACITY_MAX_VOLTAGE 8240 // mv, voltage at 100% battery capacity
+#define BAT_CAPACITY_MIN_VOLTAGE 6500 // mv, voltage at 0% battery capacity
+#define P7Voltage 6800
+#define MAX_CAPACITY 2000
+#define POWER_PREFS_NAMESPACE "power"
+#define BAT_CAPACITY_KEYNAME "batCapacity"
+
+#define BAT_IS_CHG_MIN_CRNT 120   // mA, whether the battery is charging
+#define BAT_IS_POWERD_MIN_CRNT 50 // mA, whether the battery is powered
+
+#define RPI_NEED_MIN_CRNT 250 // mA, whether the rpi is On
+
+#define DEFAULT_BATTERY_IR 300 // Default battery internal resistance 300 mOhm
+
+#define DEFAULT_ON (bool)checkDefaultOn()
+#define POWER_SOURCE (bool)checkPowerSource()
 
 extern uint8_t outputState;
+extern bool powerSource;
 
 extern uint16_t chg3V3Volt;
 extern uint16_t batCrntRefVolt;
@@ -79,13 +99,14 @@ extern int16_t batCrnt;
 extern uint16_t usbCrnt;
 extern uint16_t outputCrnt;
 
-extern uint8_t isBatPlugged;
+extern bool isBatPlugged;
+extern bool isBatPowered;
 extern uint8_t batPct;
+extern float batCapacity;
 
-extern uint8_t isUsbPlugged;
-extern uint8_t isCharging;
-extern uint8_t isLowBattery;
-extern uint16_t powerSource;
+extern bool isUsbPlugged;
+extern bool isCharging;
+extern bool isLowBattery;
 
 // --- average ---
 #define AVERAGE_FILTER_SIZE 20
@@ -115,11 +136,15 @@ extern uint16_t outputCrntAvg;
 
 // --- functions ---
 void powerIoInit(void);
-uint8_t isDefaultOn();
-uint8_t checkPowerSouce();
+bool checkDefaultOn();
+bool checkPowerSouce();
 void powerOutOpen();
 void powerOutClose();
+void pi5BtnSingleClick();
 void pi5BtnDoubleClick();
+void batEN(bool sw);
+void powerManagerAtStart();
+
 void requestShutDown(uint8_t code);
 
 void adcInit(void);
@@ -134,9 +159,13 @@ uint16_t readUsbCrnt();
 uint16_t readOutputCrnt();
 void powerDataFilter();
 
-uint8_t calcBatPct();
-
 void chgCrntCtrlInit(void);
 void chgCrntCtrl(uint16_t volt);
 float pidCalculate(uint16_t current_vol);
-void chargeAdjust(uint16_t _powerSourceVolt, uint16_t _vbusVolt);
+void chargeAdjust(bool _powerSourceVolt, uint16_t _vbusVolt);
+
+void batCapacityInit();
+void updateBatCapacity();
+uint8_t batVolt2Pct();
+uint8_t batCapacity2Pct();
+void saveBatCapacity();

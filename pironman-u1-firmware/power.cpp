@@ -1,6 +1,7 @@
 #include "power.h"
 
 uint8_t outputState = 0; // 0, off; 1, on; 2, wait for shutdown
+bool powerSource = false;
 
 uint16_t chg3V3Volt = 0;
 uint16_t batCrntRefVolt = 0;
@@ -12,13 +13,14 @@ int16_t batCrnt = 0;
 uint16_t usbCrnt = 0;
 uint16_t outputCrnt = 0;
 
-uint8_t isBatPlugged = 0;
+bool isBatPlugged = false;
+bool isBatPowered = false;
 uint8_t batPct = 0;
+float batCapacity = 0;
 
-uint8_t isUsbPlugged = 0;
-uint8_t isCharging = 0;
-uint8_t isLowBattery = 0;
-uint16_t powerSource = 0;
+bool isUsbPlugged = false;
+bool isCharging = false;
+bool isLowBattery = false;
 
 // --- average ---
 uint8_t avgFilterIndex = 0;
@@ -43,38 +45,41 @@ uint16_t batVoltAvg = 0;
 int16_t batCrntAvg = 0;
 uint16_t outputVoltAvg = 0;
 uint16_t outputCrntAvg = 0;
+
 /* ----------------------------------------------------------------
 INPUT:
-    DEFAULT_ON -> IO39
-    BTN -> IO21
+    BTN                 -> IO21 (Separate initialization)
+    DEFAULT_ON          -> IO39
+    Power_Source_1V8    -> IO42
 
 OUTPUT:
     BAT_EN -> IO11
     DC_EN -> IO15
     USB_EN -> IO16
-    PI5_BTN -> IO41
+    PI5_BTN -> IO41 (Separate initialization)
 ----------------------------------------------------------------*/
 void powerIoInit(void)
 {
+    // --- input ---
     pinMode(DEFAULT_ON_PIN, INPUT);
     pinMode(POWER_SOURCE_PIN, INPUT);
 
+    // --- ooutput ---
     pinMode(DC_EN_PIN, OUTPUT);
     pinMode(USB_EN_PIN, OUTPUT);
     pinMode(BAT_EN_PIN, OUTPUT);
 
-    digitalWrite(DC_EN_PIN, LOW);
-    digitalWrite(USB_EN_PIN, LOW);
-    pinMode(BAT_EN_PIN, HIGH);
+    powerOutClose();
+    batEN(1);
 }
 
-uint8_t isDefaultOn()
+bool checkDefaultOn()
 {
-    // return digitalRead(DEFAULT_ON_PIN);
-    return !digitalRead(DEFAULT_ON_PIN); // reverse
+    return digitalRead(DEFAULT_ON_PIN);
+    // return !digitalRead(DEFAULT_ON_PIN); // reverse
 }
 
-uint8_t checkPowerSouce()
+bool checkPowerSouce()
 {
     powerSource = digitalRead(POWER_SOURCE_PIN);
     return powerSource;
@@ -82,6 +87,7 @@ uint8_t checkPowerSouce()
 
 void powerOutOpen()
 {
+    batEN(1);
     digitalWrite(DC_EN_PIN, HIGH);
     digitalWrite(USB_EN_PIN, HIGH);
     outputState = 1;
@@ -92,6 +98,17 @@ void powerOutClose()
     digitalWrite(DC_EN_PIN, LOW);
     digitalWrite(USB_EN_PIN, LOW);
     outputState = 0;
+}
+
+void pi5BtnSingleClick()
+{
+    pinMode(PI5_BTN_PIN, OUTPUT);
+    //
+    digitalWrite(PI5_BTN_PIN, LOW);
+    delay(50);
+    digitalWrite(PI5_BTN_PIN, HIGH);
+    //
+    pinMode(PI5_BTN_PIN, INPUT);
 }
 
 void pi5BtnDoubleClick()
@@ -107,6 +124,45 @@ void pi5BtnDoubleClick()
     digitalWrite(PI5_BTN_PIN, HIGH);
     //
     pinMode(PI5_BTN_PIN, INPUT);
+}
+
+void batEN(bool sw)
+{
+    if (sw)
+    {
+        digitalWrite(BAT_EN_PIN, HIGH);
+    }
+    else
+    {
+        digitalWrite(BAT_EN_PIN, LOW);
+    }
+}
+
+//------------------------
+void powerManagerAtStart()
+{
+    batEN(1);
+    if (BTN)
+    {
+        powerOutOpen(); // output open
+        return;
+    }
+    else
+    {
+        if (DEFAULT_ON)
+        {
+            delay(2); // software anti-shaking
+            if (DEFAULT_ON)
+            {
+                batEN(1);
+                powerOutOpen(); // output open
+                return;
+            }
+        }
+    }
+
+    // not return
+    powerOutClose(); // output close
 }
 
 /* ----------- requestShutDown -----------*/
@@ -287,28 +343,6 @@ void powerDataFilter()
         avgFilterIndex = 0;
     }
 }
-// Battery capacitys
-// =================================================================
-uint8_t calcBatPct()
-{
-    uint8_t percent = 0;
-
-    if (batVolt > MAX_BAT_VOLTAGE)
-    {
-        percent = 100;
-    }
-    else if (batVolt < MIN_BAT_VOLTAGE)
-    {
-        percent = 0;
-    }
-    else
-    {
-        percent = (batVolt - MIN_BAT_VOLTAGE) * 100 / (MAX_BAT_VOLTAGE - MIN_BAT_VOLTAGE);
-    }
-
-    batPct = percent;
-    return batPct;
-}
 
 // chargeAdjust
 // =================================================================
@@ -356,9 +390,16 @@ float pidCalculate(uint16_t current_vol)
     return output;
 }
 
-void chargeAdjust(uint16_t _powerSource, uint16_t _vbusVolt)
+void chargeAdjust(bool _powerSource, uint16_t _vbusVolt)
 {
     int pidOutput = 0;
+
+    if (outputState == 0)
+    {
+        chgCrntCtrl(0);
+        dac_vol = 0;
+        return;
+    }
 
     if (_powerSource)
     {
@@ -376,4 +417,148 @@ void chargeAdjust(uint16_t _powerSource, uint16_t _vbusVolt)
             dac_vol = 0;
         chgCrntCtrl((uint16_t)dac_vol);
     }
+}
+
+// Battery capacitys
+// =================================================================
+uint8_t batVolt2Pct()
+{
+    uint8_t percent = 0;
+
+    if (batVolt > BAT_CAPACITY_MAX_VOLTAGE)
+    {
+        percent = 100;
+    }
+    else if (batVolt < BAT_CAPACITY_MIN_VOLTAGE)
+    {
+        percent = 0;
+    }
+    else
+    {
+        percent = (batVolt - BAT_CAPACITY_MIN_VOLTAGE) * 100 / (BAT_CAPACITY_MAX_VOLTAGE - BAT_CAPACITY_MIN_VOLTAGE);
+    }
+
+    batPct = percent;
+    return batPct;
+}
+
+uint16_t batVolt2Capacity(uint16_t volt)
+{
+    if (volt > BAT_CAPACITY_MAX_VOLTAGE)
+    {
+        batCapacity = MAX_CAPACITY;
+    }
+    else if (volt < BAT_CAPACITY_MIN_VOLTAGE)
+    {
+        batCapacity = 0;
+    }
+    else if (volt > P7Voltage)
+    {
+        // batCapacity = MAX_CAPACITY*0.7 + (float)(volt - P7Voltage) / (MaxVoltage - P7Voltage) * MAX_CAPACITY * (1 - 0.07);
+        batCapacity = 140 + (volt - P7Voltage) / 1440.0 * 1860;
+    }
+    else if (volt < P7Voltage)
+    {
+        // batCapacity = (float)(volt - MinVoltage) / (P7Voltage - MinVoltage) * MAX_CAPACITY * (0.07);
+        batCapacity = (float)(volt - BAT_CAPACITY_MIN_VOLTAGE) / 300 * 140;
+    }
+    return batCapacity;
+}
+
+void batCapacityInit()
+{
+    uint16_t savedCap = 0;
+    uint16_t calcedCap = 0;
+    uint32_t _sum = 0;
+    int32_t _error = 0;
+
+    info("battery capacity init ...");
+
+    Preferences powerPrefs;
+    powerPrefs.begin(POWER_PREFS_NAMESPACE); // namespace
+    savedCap = powerPrefs.getUShort(BAT_CAPACITY_KEYNAME, 0);
+    powerPrefs.end();
+
+    for (int i = 0; i < 10; i++)
+    {
+        _sum += readBatVolt();
+        delay(10);
+    }
+    calcedCap = batVolt2Capacity((uint16_t)(_sum / 10));
+    _error = savedCap - calcedCap;
+    if (_error < 0)
+    {
+        _error = -_error;
+    }
+
+    if (_error < 200)
+    {
+        batCapacity = savedCap;
+    }
+    else
+    {
+        batCapacity = calcedCap;
+    }
+#if 0
+#endif
+    info("Init capacity: %.2f\n", batCapacity);
+}
+
+// ----- updateBatCapacity -----
+#define MAX_BAT_CALI_COUNT 5
+#define BAT_CAPACITY_CALC_INTERVAL 50 // ms
+bool p7caliFlag = true;
+uint8_t batCaliCount = 0;
+
+void updateBatCapacity()
+{
+    uint16_t realVolt = 0;
+
+    // batCrnt : + charge, - discharge
+    realVolt = batVolt - batCrnt * ((float)DEFAULT_BATTERY_IR / 1000);
+
+    if (realVolt < P7Voltage && p7caliFlag)
+    {
+        batCaliCount++;
+        if (batCaliCount > MAX_BAT_CALI_COUNT)
+        {
+            batCapacity = (float)MAX_CAPACITY * 0.07;
+            p7caliFlag = false;
+        }
+    }
+    else if (realVolt > P7Voltage + 500)
+    {
+        p7caliFlag = true;
+    }
+    else if (realVolt > P7Voltage)
+    {
+        batCaliCount = 0;
+    }
+
+    // current integral
+    batCapacity += batCrnt * (float)BAT_CAPACITY_CALC_INTERVAL / 3600.0 / 1000.0;
+    if (batCapacity >= MAX_CAPACITY)
+    {
+        batCapacity = (float)MAX_CAPACITY;
+    }
+    else if (batCapacity <= 0)
+    {
+        batCapacity = 0.0;
+    }
+}
+
+uint8_t batCapacity2Pct()
+{
+    batPct = (uint8_t)(batCapacity / (float)MAX_CAPACITY * 100);
+    return batPct;
+}
+
+void saveBatCapacity()
+{
+    Preferences powerPrefs;
+    powerPrefs.begin(POWER_PREFS_NAMESPACE); // namespace
+    powerPrefs.putUShort(BAT_CAPACITY_KEYNAME, batCapacity);
+    powerPrefs.end();
+
+    info("save batery Capacity: %d", batCapacity);
 }
