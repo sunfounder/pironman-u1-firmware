@@ -1,6 +1,6 @@
 #include "config.h"
 
-Preferences prefs;
+Preferences configPrefs;
 Config config;
 
 void loadPreferences()
@@ -8,21 +8,23 @@ void loadPreferences()
     Serial.println(); // new line
     info("Loading preferences ...");
 
-    prefs.begin(PREFS_NAMESPACE); // namespace
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
 
-    config.staENABLE = prefs.getUChar(STA_ENABLE_KEYNAME, DEFAULT_STA_ENABLE);
-    strlcpy(config.hostname, prefs.getString(HOSTNAME_KEYNAME, DEFAULT_HOSTNAME).c_str(), sizeof(config.hostname));
-    strlcpy(config.staSSID, prefs.getString(STA_SSID_KEYNAME, DEFAULT_STA_SSID).c_str(), sizeof(config.staSSID));
-    strlcpy(config.staPSK, prefs.getString(STA_PSK_KEYNAME, DEFAULT_STA_PSK).c_str(), sizeof(config.staPSK));
-    strlcpy(config.apSSID, prefs.getString(AP_SSID_KEYNAME, DEFAULT_AP_SSID).c_str(), sizeof(config.apSSID));
-    strlcpy(config.apPSK, prefs.getString(AP_PSK_KEYNAME, DEFAULT_AP_PSK).c_str(), sizeof(config.apPSK));
-    config.autoTimeEnable = prefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
-    strlcpy(config.timezone, prefs.getString(TIME_ZONE_KEYNAME, DEFAULT_TIME_ZONE).c_str(), sizeof(config.apPSK));
-    strlcpy(config.ntpServe, prefs.getString(NTP_SERVER_KEYNAME, DEFAULT_NTP_SERVER).c_str(), sizeof(config.apPSK));
-    config.shutdownPct = prefs.getUChar(SHUTDOWN_PCT_KEYNAME, DEFAULT_SHUTDOWN_PCT);
-    config.poweroffPct = prefs.getUChar(POWEROFF_PCT_KEYNAME, DEFAULT_POWEROFF_PCT);
+    config.staENABLE = configPrefs.getUChar(STA_ENABLE_KEYNAME, DEFAULT_STA_ENABLE);
+    strlcpy(config.hostname, configPrefs.getString(HOSTNAME_KEYNAME, DEFAULT_HOSTNAME).c_str(), sizeof(config.hostname));
+    strlcpy(config.staSSID, configPrefs.getString(STA_SSID_KEYNAME, DEFAULT_STA_SSID).c_str(), sizeof(config.staSSID));
+    strlcpy(config.staPSK, configPrefs.getString(STA_PSK_KEYNAME, DEFAULT_STA_PSK).c_str(), sizeof(config.staPSK));
+    strlcpy(config.apSSID, configPrefs.getString(AP_SSID_KEYNAME, DEFAULT_AP_SSID).c_str(), sizeof(config.apSSID));
+    strlcpy(config.apPSK, configPrefs.getString(AP_PSK_KEYNAME, DEFAULT_AP_PSK).c_str(), sizeof(config.apPSK));
+    config.autoTimeEnable = configPrefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
+    strlcpy(config.timezone, configPrefs.getString(TIME_ZONE_KEYNAME, DEFAULT_TIME_ZONE).c_str(), sizeof(config.apPSK));
+    strlcpy(config.ntpServe, configPrefs.getString(NTP_SERVER_KEYNAME, DEFAULT_NTP_SERVER).c_str(), sizeof(config.apPSK));
+    config.shutdownPct = configPrefs.getUChar(SHUTDOWN_PCT_KEYNAME, DEFAULT_SHUTDOWN_PCT);
+    config.fanPower = configPrefs.getUChar(FAN_POWER_KEYNAME, DEFAULT_FAN_POWER);
+    config.sdDataInterval = configPrefs.getUInt(SD_DATA_INTERVAL_KEYNAME, DEFAULT_SD_DATA_INTERVAL);
+    config.sdDataRetain = configPrefs.getUInt(SD_DATA_RETAIN_KEYNAME, DEFAULT_SD_DATA_RETAIN);
 
-    prefs.end();
+    configPrefs.end();
 
     info("hostname: %s", config.hostname);
     info("sta.enable: %d", config.staENABLE);
@@ -33,7 +35,9 @@ void loadPreferences()
     info("autoTimeEnable: %d", config.autoTimeEnable);
     info("ntpServe: %s", config.ntpServe);
     info("shutdownPct: %d", config.shutdownPct);
-    info("poweroffPct: %d", config.poweroffPct);
+    info("fanPower: %d", config.fanPower);
+    info("sdDataInterval: %d", config.shutdownPct);
+    info("sdDataRetain: %d", config.sdDataRetain);
 }
 
 bool readConfigFormSD(bool isDelete)
@@ -65,50 +69,50 @@ bool readConfigFormSD(bool isDelete)
         Serial.println("\n\'\'\'");
 
         // --- copy the config ---
-        prefs.begin(PREFS_NAMESPACE); // namespace
+        configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
 
         if (doc.containsKey("hostname"))
         {
-            prefs.putString(HOSTNAME_KEYNAME, doc["hostname"].as<const char *>());
+            configPrefs.putString(HOSTNAME_KEYNAME, doc["hostname"].as<const char *>());
         }
         if (doc.containsKey("sta"))
         {
             if (doc["sta"].containsKey("enable"))
             {
-                prefs.putUChar(STA_ENABLE_KEYNAME, doc["sta"]["enable"].as<unsigned char>());
+                configPrefs.putUChar(STA_ENABLE_KEYNAME, doc["sta"]["enable"].as<unsigned char>());
             }
             if (doc["sta"].containsKey("ssid"))
             {
-                prefs.putString(STA_SSID_KEYNAME, doc["sta"]["ssid"].as<const char *>());
+                configPrefs.putString(STA_SSID_KEYNAME, doc["sta"]["ssid"].as<const char *>());
             }
             if (doc["sta"].containsKey("psk"))
             {
-                prefs.putString(STA_PSK_KEYNAME, doc["sta"]["psk"].as<const char *>());
+                configPrefs.putString(STA_PSK_KEYNAME, doc["sta"]["psk"].as<const char *>());
             }
         }
         if (doc.containsKey("ap"))
         {
             if (doc["ap"].containsKey("ssid"))
             {
-                prefs.putString(AP_SSID_KEYNAME, doc["ap"]["ssid"].as<const char *>());
+                configPrefs.putString(AP_SSID_KEYNAME, doc["ap"]["ssid"].as<const char *>());
             }
             if (doc["ap"].containsKey("psk"))
             {
-                prefs.putString(AP_PSK_KEYNAME, doc["ap"]["psk"].as<const char *>());
+                configPrefs.putString(AP_PSK_KEYNAME, doc["ap"]["psk"].as<const char *>());
             }
         }
         if (doc.containsKey("timezone"))
         {
-            prefs.putString(TIME_ZONE_KEYNAME, doc["timezone"].as<const char *>());
+            configPrefs.putString(TIME_ZONE_KEYNAME, doc["timezone"].as<const char *>());
         }
         if (doc.containsKey("ntpServe"))
         {
-            prefs.putString(TIME_ZONE_KEYNAME, doc["ntpServe"].as<const char *>());
+            configPrefs.putString(TIME_ZONE_KEYNAME, doc["ntpServe"].as<const char *>());
         }
 
         // clear
         doc.clear();
-        prefs.end();
+        configPrefs.end();
 
         // --- delete the config ---
         if (isDelete)

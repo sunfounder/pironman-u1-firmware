@@ -7,10 +7,9 @@
 #include "file_system.h"
 
 /*----------------------------------------------------------------*/
-#define PREFS_NAMESPACE "conifg"
+#define CONFIG_PREFS_NAMESPACE "conifg"
 
 #define SD_CONFIG_FILE "/config.json"
-#define SPIFFS_CONFIG_FILE "/config.json"
 
 #define HOSTNAME_KEYNAME "hostname"
 #define STA_ENABLE_KEYNAME "staENABLE"
@@ -22,7 +21,9 @@
 #define TIME_ZONE_KEYNAME "timezone"
 #define NTP_SERVER_KEYNAME "ntpServe"
 #define SHUTDOWN_PCT_KEYNAME "shutdownPct"
-#define POWEROFF_PCT_KEYNAME "poweroffPct"
+#define FAN_POWER_KEYNAME "fanPower"
+#define SD_DATA_INTERVAL_KEYNAME "sdDataInterval"
+#define SD_DATA_RETAIN_KEYNAME "sdDataRetain"
 
 #define DEFAULT_HOSTNAME "Pironman-U1"
 #define DEFAULT_STA_ENABLE 0
@@ -36,7 +37,12 @@
 #define DEFAULT_NTP_SERVER "pool.ntp.org"
 
 #define DEFAULT_SHUTDOWN_PCT 20
-#define DEFAULT_POWEROFF_PCT 10
+
+#define DEFAULT_FAN_POWER 75
+
+#define DEFAULT_SD_DATA_INTERVAL 1  // seconds
+#define DEFAULT_SD_DATA_RETAIN 1000 // days
+
 struct Config
 {
     char hostname[32];
@@ -49,11 +55,13 @@ struct Config
     char timezone[12];
     char ntpServe[32];
     uint8_t shutdownPct;
-    uint8_t poweroffPct;
+    uint8_t fanPower;
+    uint32_t sdDataInterval;
+    uint32_t sdDataRetain;
 };
 
 extern Config config;
-extern Preferences prefs;
+extern Preferences configPrefs;
 
 void loadPreferences();
 bool readConfigFormSD(bool isDelete);
