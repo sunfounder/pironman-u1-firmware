@@ -82,18 +82,18 @@ void setWiFiConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     doc.clear();
 
     // --- copy the config ---
-    prefs.begin(PREFS_NAMESPACE);
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE);
     if (sw)
     {
-        prefs.putUChar(STA_ENABLE_KEYNAME, 1);
+        configPrefs.putUChar(STA_ENABLE_KEYNAME, 1);
     }
     else
     {
-        prefs.putUChar(STA_ENABLE_KEYNAME, 0);
+        configPrefs.putUChar(STA_ENABLE_KEYNAME, 0);
     }
-    prefs.putString(STA_SSID_KEYNAME, ssid);
-    prefs.putString(STA_PSK_KEYNAME, psk);
-    prefs.end();
+    configPrefs.putString(STA_SSID_KEYNAME, ssid);
+    configPrefs.putString(STA_PSK_KEYNAME, psk);
+    configPrefs.end();
 
     config.staENABLE = sw;
     strlcpy(config.staSSID, ssid.c_str(), sizeof(config.staSSID));
@@ -147,10 +147,10 @@ void setAPConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     doc.clear();
 
     // --- copy the config ---
-    prefs.begin(PREFS_NAMESPACE); // namespace
-    prefs.putString(AP_SSID_KEYNAME, ssid);
-    prefs.putString(AP_PSK_KEYNAME, psk);
-    prefs.end();
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+    configPrefs.putString(AP_SSID_KEYNAME, ssid);
+    configPrefs.putString(AP_PSK_KEYNAME, psk);
+    configPrefs.end();
 
     strlcpy(config.apSSID, ssid.c_str(), sizeof(config.apSSID));
     strlcpy(config.apPSK, psk.c_str(), sizeof(config.apPSK));
@@ -234,21 +234,21 @@ void setAutoTimeHandle(AsyncWebServerRequest *request, uint8_t *data)
     doc.clear();
 
     // --- copy the config ---
-    prefs.begin(PREFS_NAMESPACE);
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE);
     if (_enable)
     {
-        prefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 1);
+        configPrefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 1);
 
         info("ntp time sync now (%s)", config.ntpServe);
         ntpTimeSync();
     }
     else
     {
-        prefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 0);
+        configPrefs.putUChar(AUTO_TIME_ENABLE_KEYNAME, 0);
     }
 
-    config.autoTimeEnable = prefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
-    prefs.end();
+    config.autoTimeEnable = configPrefs.getUChar(AUTO_TIME_ENABLE_KEYNAME, DEFAULT_AUTO_TIME_ENABLE);
+    configPrefs.end();
 
     // ---- response ----
     request->send_P(200, "application/json", okJson);
@@ -298,9 +298,9 @@ void setTimeZoneHandle(AsyncWebServerRequest *request, uint8_t *data)
     doc.clear();
 
     // --- copy the config ---
-    prefs.begin(PREFS_NAMESPACE); // namespace
-    prefs.putString(TIME_ZONE_KEYNAME, tz);
-    prefs.end();
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+    configPrefs.putString(TIME_ZONE_KEYNAME, tz);
+    configPrefs.end();
 
     strlcpy(config.timezone, tz.c_str(), sizeof(config.timezone));
 
@@ -330,9 +330,9 @@ void setNTPServerHandle(AsyncWebServerRequest *request, uint8_t *data)
     doc.clear();
 
     // --- copy the config ---
-    prefs.begin(PREFS_NAMESPACE); // namespace
-    prefs.putString(NTP_SERVER_KEYNAME, _ntp_server);
-    prefs.end();
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+    configPrefs.putString(NTP_SERVER_KEYNAME, _ntp_server);
+    configPrefs.end();
 
     strlcpy(config.ntpServe, _ntp_server.c_str(), sizeof(config.ntpServe));
 
@@ -347,6 +347,32 @@ void setNTPServerHandle(AsyncWebServerRequest *request, uint8_t *data)
 
 // -----------------------
 extern uint8_t settingBuffer[];
+
+void setFanPowerHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    debug("setting Fan Power");
+
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("fan_mode"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    uint8_t _power = doc["fan_mode"];
+    doc.clear();
+
+    // --- operate  ---
+    info("setting Fan Power: %d\n", _power);
+    settingBuffer[0] = _power;
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
 
 void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
 {
@@ -369,8 +395,68 @@ void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
     {
         pct = 100;
     }
-    Serial.printf("sett shutdown-percentage: %d\n", pct);
+    Serial.printf("set shutdown-percentage: %d\n", pct);
     settingBuffer[9] = pct;
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+// -----------------------
+
+void setSDDataIntervalHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("interval"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    uint32_t _interval = doc["interval"];
+    doc.clear();
+
+    // --- copy the config ---
+    Serial.printf("set sd-data-interval: %d\n", _interval);
+
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+    configPrefs.putUInt(SD_DATA_INTERVAL_KEYNAME, _interval);
+    configPrefs.end();
+
+    config.sdDataInterval = _interval;
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+void setSDDataRetainHandle(AsyncWebServerRequest *request, uint8_t *data)
+{
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("interval"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    uint16_t _retain = doc["_retain"];
+    doc.clear();
+
+    // --- copy the config ---
+    Serial.printf("set sd-data-_retain: %d\n", _retain);
+
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+    configPrefs.putUInt(SD_DATA_RETAIN_KEYNAME, _retain);
+    configPrefs.end();
+
+    config.sdDataInterval = _retain;
 
     // ---- response ----
     request->send_P(200, "application/json", okJson);
@@ -571,7 +657,6 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/api/v1.0/get-config", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-#if 1
                   String json = "{";
                   json += "\"status\":true";
                   json += ",\"data\":{";
@@ -581,7 +666,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += "}";
                   json += ",\"system\":{";
                   json += "\"shutdown_percentage\":" + String(config.shutdownPct);
-                  json += ",\"power_off_percentage\":" + String(config.poweroffPct);
+                  json += ",\"fan_power\":" + String(config.fanPower);
                   json += ",\"timestamp\":" + String(getTimeSample());
                   json += ",\"timezone\":\"" + String(config.timezone) + "\"";
                   json += ",\"auto_time_switch\":" + String(config.autoTimeEnable ? "true" : "false");
@@ -590,6 +675,8 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += ",\"ip_address\":\"" + WiFi.localIP().toString() + "\"";
                   json += ",\"sd_card_used\":" + String(SD.usedBytes() / (1024 * 1024));
                   json += ",\"sd_card_total\":" + String(SD.totalBytes() / (1024 * 1024));
+                  json += ",\"sd_card_data_interval\":" + String(config.sdDataInterval);
+                  json += ",\"sd_card_data_retain\":" + String(config.sdDataRetain);
                   json += "}";
                   json += ",\"mqtt\":{";
                   json += "\"host\":\"" + String("pironman-U1-mqtt") + "\"";
@@ -600,10 +687,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += "}}";
 
                   request->send(200, "application/json", json);
-        //   request->send(SPIFFS, "/config.json", "application/json");
-#else
-                  request->send(200, "application/json", okJson);
-#endif
+                  //   request->send(SPIFFS, "/config.json", "application/json");
               });
 
     // get-history
@@ -769,7 +853,7 @@ void webPageBegin(WebpageConfig *webConfig)
               {
                   String json = "{";
                   json += "\"status\":true";
-                  json += ",\"data\":" + String(isDefaultOn() ? "true" : "false");
+                  json += ",\"data\":" + String(checkDefaultOn() ? "true" : "false");
                   json += "}";
 
                   request->send(200, "application/json", json);
@@ -853,6 +937,22 @@ void webPageBegin(WebpageConfig *webConfig)
                 Serial.printf("restart now\n");
                 ESP.restart();
             }
+            // set-fan-power
+            else if (request->url() == "/api/v1.0/set-fan-power")
+            {
+                Serial.printf("[REQUEST][set-fan-power] %s\n", (const char *)data);
+                setFanPowerHandle(request, data);
+            }
+            else if (request->url() == "/api/v1.0/set-sd-data-interval")
+            {
+                Serial.printf("[REQUEST][set-sd-data-interval] %s\n", (const char *)data);
+                setSDDataIntervalHandle(request, data);
+            }
+            else if (request->url() == "/api/v1.0/set-sd-data-retain")
+            {
+                Serial.printf("[REQUEST][set-sd-data-retain] %s\n", (const char *)data);
+                setSDDataRetainHandle(request, data);
+            }
         });
 
     // ota-update
@@ -889,9 +989,4 @@ void webPageBegin(WebpageConfig *webConfig)
         Serial.printf("    %s:%d\n", WiFi.localIP().toString().c_str(), WEB_PORT);
     }
     Serial.printf("    %s:%d\n", WiFi.softAPIP().toString().c_str(), WEB_PORT);
-}
-
-void webPageLoop()
-{
-    // server.handleClient();
 }
