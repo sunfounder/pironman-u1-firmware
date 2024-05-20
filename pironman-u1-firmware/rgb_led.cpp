@@ -11,6 +11,9 @@ void rgbLEDInit(void)
     ledcAttachPin(LED_R_PIN, LED_R_PWM_CHANNEL);
     ledcAttachPin(LED_G_PIN, LED_G_PWM_CHANNEL);
     ledcAttachPin(LED_B_PIN, LED_B_PWM_CHANNEL);
+    ledcWrite(LED_R_PWM_CHANNEL, 0);
+    ledcWrite(LED_G_PWM_CHANNEL, 0);
+    ledcWrite(LED_B_PWM_CHANNEL, 0);
 }
 
 void rgbWrite(uint8_t r, uint8_t g, uint8_t b)
@@ -40,67 +43,21 @@ void rgbHandler()
 
     if (lastrgbMode != rgbMode)
     {
+        debug("rgbMode: %d", rgbMode);
         lastrgbMode = rgbMode;
         rgbTimeCnt = 0xffff;
     }
 
-    switch (rgbMode)
+    // RGB_MODE_OFF
+    if (rgbMode == RGB_MODE_OFF)
     {
-    case RGB_MODE_OFF:
-        if (rgbTimeCnt > RGB_STATIC_INTERVAL)
-        {
-            rgbClose();
-            rgbTimeCnt = 0;
-        }
-        break;
-    case RGB_MODE_CHARGING:
-        if (rgbTimeCnt > RGB_BREATH_INTERVAL)
-        {
-            if (rgbBrightness == 1)
-            {
-                rgbBrightness = 0;
-            }
-            else
-            {
-                rgbBrightness += 0.05;
-            }
-            r = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_R);
-            g = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_G);
-            b = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_B);
-            rgbWrite(r, g, b);
-            rgbTimeCnt = 0;
-        }
-        break;
-    case RGB_MODE_USB_POWERED:
-        if (rgbTimeCnt > RGB_STATIC_INTERVAL)
-        {
-            rgbWrite(USB_POWERED_COLOR);
-            rgbTimeCnt = 0;
-        }
-        break;
-    case RGB_MODE_BAT_POWERED:
-        if (rgbTimeCnt > RGB_STATIC_INTERVAL)
-        {
-            rgbWrite(BAT_POWERED_COLOR);
-            rgbTimeCnt = 0;
-        }
-        break;
-    case RGB_MODE_LOW_BATTERY:
-        if (rgbTimeCnt > RGB_BLINK_INTERVAL)
-        {
-            rgbBlinkFlag = !rgbBlinkFlag;
-            if (rgbBlinkFlag)
-            {
-                rgbWrite(LOW_BATTERY_COLOR);
-            }
-            else
-            {
-                rgbClose();
-            }
-            rgbTimeCnt = 0;
-        }
-        break;
-    case RGB_MODE_WAIT_SHUTDOWN:
+        rgbClose();
+        return;
+    }
+
+    // RGB_MODE_WAIT_SHUTDOWN
+    if (rgbMode == RGB_MODE_WAIT_SHUTDOWN)
+    {
         if (rgbTimeCnt > RGB_BLINK_INTERVAL)
         {
             rgbBlinkFlag = !rgbBlinkFlag;
@@ -114,8 +71,60 @@ void rgbHandler()
             }
             rgbTimeCnt = 0;
         }
-        break;
-    default:
-        break;
+    }
+    // RGB_MODE_CHARGING
+    else if (rgbMode == RGB_MODE_CHARGING)
+    {
+        if (rgbTimeCnt > RGB_BREATH_INTERVAL)
+        {
+            if (rgbBrightness >= 1)
+            {
+                rgbBrightness = 0.0;
+            }
+            else
+            {
+                rgbBrightness += 0.05;
+            }
+            r = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_R);
+            g = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_G);
+            b = (uint8_t)(rgbBrightness * (float)CHARGING_COLOR_B);
+            rgbWrite(r, g, b);
+            rgbTimeCnt = 0;
+        }
+    }
+    // RGB_MODE_LOW_BATTERY
+    else if (rgbMode == RGB_MODE_LOW_BATTERY)
+    {
+        if (rgbTimeCnt > RGB_BLINK_INTERVAL)
+        {
+            rgbBlinkFlag = !rgbBlinkFlag;
+            if (rgbBlinkFlag)
+            {
+                rgbWrite(LOW_BATTERY_COLOR);
+            }
+            else
+            {
+                rgbClose();
+            }
+            rgbTimeCnt = 0;
+        }
+    }
+    // RGB_MODE_BAT_POWERED
+    else if (rgbMode == RGB_MODE_BAT_POWERED)
+    {
+        if (rgbTimeCnt > RGB_STATIC_INTERVAL)
+        {
+            rgbWrite(BAT_POWERED_COLOR);
+            rgbTimeCnt = 0;
+        }
+    }
+    // RGB_MODE_USB_POWERED
+    else if (rgbMode == RGB_MODE_USB_POWERED)
+    {
+        if (rgbTimeCnt > RGB_STATIC_INTERVAL)
+        {
+            rgbWrite(USB_POWERED_COLOR);
+            rgbTimeCnt = 0;
+        }
     }
 }

@@ -1,6 +1,8 @@
 #pragma once
 
+#include <Arduino.h>
 #include "esp32-hal-ledc.h"
+#include "debug.h"
 /* ----------------------------------------------------------------
     LED_R -> IO26
     LED_G -> IO33
@@ -28,6 +30,7 @@ extern uint16_t rgbTimeCnt;
 #define RGB_MODE_LOW_BATTERY 4   // low battery
 #define RGB_MODE_WAIT_SHUTDOWN 5 // waiting for shutdown
 
+// min interval 50
 #define RGB_BREATH_INTERVAL 100 // ms
 #define RGB_BLINK_INTERVAL 500
 #define RGB_STATIC_INTERVAL 3000
