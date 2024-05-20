@@ -23,20 +23,17 @@ SD SPI:
     SCLK -> IO36
     CS0 -> IO34
 
+SD_DT -> IO40
+
 USB:
     D+ -> USB_D+
     D- -> USB_D-
 
-BOARD_ID:
-    BD0 -> IO40
-    BD1 -> IO41
-    BD2 -> IO42
-
 PWM:
     RGB_LED:
-        LED_R -> IO26
+        LED_R -> IO38
         LED_G -> IO33
-        LED_B -> IO38
+        LED_B -> IO26
 
     FAN:
         FAN -> IO18
@@ -45,19 +42,23 @@ DAC:
     CHG_CRNT_CTRL -> IO17
 
 INPUT:
-    ALWAYS_ON -> IO39
+    DEFAULT_ON -> IO39
     BTN -> IO21
+    Power_Source_1V8 -> IO42
+    #VBS_DT -> IO6
 
 OUTPUT:
+    BAT_EN -> IO11
     DC_EN -> IO15
     USB_EN -> IO16
+    PI5_BTN -> IO41
 
 ADC:
     CHG_3V3 -> IO1
     BATTERY_CURRENT_REF -> IO2
     BATTERY_CURRENT_FILTERED -> IO3
     USB_CURRENT_FILTERED -> IO4
-    Power_Source_3V3 -> IO5
+
     VBUS_3V3 -> IO6
     OUTPUT_CURRENT_FILTERED -> IO7
     BT_LV_3V3 -> IO8
@@ -75,41 +76,36 @@ ADC:
 #include "fan.h"
 #include "btn.h"
 #include "sdcard.h"
-#include "deep_sleep.h"
 #include "file_system.h"
-#include "LittleFS.h"
 #include "mqtt.h"
 #include "date_time.h"
 #include "config.h"
 
-#define SPIFFS LittleFS
-
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.6"
+#define VERSION "0.0.8"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
-#define VERSION_MICRO 6
+#define VERSION_MICRO 8
 
 #define BOARD_ID 0x00
 
 // global variables
 // =================================================================
-bool hasSD = 0;
 WiFiHelper wifi = WiFiHelper();
 
 // Functions
 // =================================================================
 void saveDataIntoSD();
 void shutdown();
-// void rpiStateHandler();
+void rpiStateHandler();
 
 // -----------------
-
 void wifiStart()
 {
     Serial.println("\nWiFi start ...");
-    // aps
+
+    // ap
     wifi.connectAP(config.apSSID, config.apPSK);
 
     // sta
@@ -155,44 +151,6 @@ String myOnData()
     return jsonString;
 }
 
-bool myOnConfig(int mode, bool enable, String ssid, String psk)
-{
-    String txtbuf;
-    size_t size;
-
-    // loading config in SPIFFS
-    readFile(SPIFFS, SPIFFS_CONFIG_FILE, &txtbuf, &size);
-
-    DynamicJsonDocument doc(size + 64);
-    DeserializationError _error = deserializeJson(doc, txtbuf);
-    if (_error)
-        error("Failed to read file, using default configuration");
-
-    // update config
-    if (mode == STA)
-    {
-        doc["STA"]["ENABLE"] = enable;
-        doc["STA"]["SSID"] = ssid;
-        doc["STA"]["PSK"] = psk;
-    }
-    else if (mode == AP)
-    {
-        doc["AP"]["SSID"] = ssid;
-        doc["AP"]["PSK"] = psk;
-    }
-
-    // write config
-    serializeJson(doc, txtbuf);
-    serializeJsonPretty(doc, txtbuf);
-    writeFile(SPIFFS, SPIFFS_CONFIG_FILE, txtbuf.c_str());
-
-    // clear
-    doc.clear();
-
-    // return execution status
-    return true;
-}
-
 // I2C
 // =================================================================
 #define I2C_FREQ 400000
@@ -208,8 +166,7 @@ void onReceive(int numBytes)
     uint8_t cmd = 0;
     uint8_t settingAddr = 0;
 
-    Serial.print("onReceive: ");
-    Serial.println(numBytes);
+    debug("i2c onReceive: %d", numBytes);
 
     //---- read cmd ----
     cmd = Wire.read();
@@ -251,14 +208,14 @@ void i2cInit()
     Wire.onRequest(onRequest);
     Wire.begin((uint8_t)I2C_DEV_ADDR, I2C_SDA, I2C_SCL, I2C_FREQ);
 }
-// time counter (TIM1) 5ms interrupt
+// time counter (TIM0) 5ms interrupt,
 // =================================================================
 #define TIM0_COUNTER_PREIOD 5 // ms
 #define TIM0_DIV 80           // 80MHz / 80 = 1MHz, count plus one every us
 #define TIM0_TICKS 5000       // 5000 * us = 5ms
 
 hw_timer_t *tim0 = NULL;
-uint16_t time20Cnt = 0;
+uint16_t time50Cnt = 0;
 uint16_t time1000Cnt = 0;
 
 void IRAM_ATTR onTim0()
@@ -267,7 +224,7 @@ void IRAM_ATTR onTim0()
     longPressTimeCnt += TIM0_COUNTER_PREIOD;
     doulePressTimeCnt += TIM0_COUNTER_PREIOD;
     rgbTimeCnt += TIM0_COUNTER_PREIOD;
-    time20Cnt += TIM0_COUNTER_PREIOD;
+    time50Cnt += TIM0_COUNTER_PREIOD;
     time1000Cnt += TIM0_COUNTER_PREIOD;
 
     // Serial.println("onTim0");
@@ -280,12 +237,56 @@ void tim0Init(void)
     timerAlarmWrite(tim0, TIM0_TICKS, true);
     timerAlarmEnable(tim0);
 }
+
+// time counter (TIM3) 100ms interrupt, used for boot rgb animation
+// =================================================================
+#define TIM3_COUNTER_PREIOD 100 // ms
+#define TIM3_DIV 80             // 80MHz / 80 = 1MHz, count plus one every us
+#define TIM3_TICKS 100000       // 5000 * us = 5ms
+
+#define BOOT_COLOR_R 0
+#define BOOT_COLOR_G 0
+#define BOOT_COLOR_B 255
+
+extern float rgbBrightness;
+
+void IRAM_ATTR onbootRgbAnimation()
+{
+    if (rgbBrightness >= 1)
+    {
+        rgbBrightness = 0.0;
+    }
+    else
+    {
+        rgbBrightness += 0.05;
+    }
+
+    uint8_t _r = (uint8_t)(rgbBrightness * (float)BOOT_COLOR_R);
+    uint8_t _g = (uint8_t)(rgbBrightness * (float)BOOT_COLOR_G);
+    uint8_t _b = (uint8_t)(rgbBrightness * (float)BOOT_COLOR_B);
+    rgbWrite(_r, _g, _b);
+}
+
+void bootRGBAnimationStart(void)
+{
+    hw_timer_t *tim3 = NULL;
+    tim3 = timerBegin(3, TIM3_DIV, true);
+    timerAttachInterrupt(tim3, &onbootRgbAnimation, true);
+    timerAlarmWrite(tim3, TIM3_TICKS, true);
+    timerAlarmEnable(tim3);
+}
+
+void bootRgbAnimationStop(void)
+{
+    hw_timer_t *tim3 = NULL;
+    tim3 = timerBegin(3, TIM3_DIV, true);
+    timerAlarmDisable(tim3);
+}
+
 // power manager
 // =================================================================
-#define LOW_BATTERY_WARNING 20          // 20% Low battery warning（led flashing）
-#define LOW_BATTERY_SHUTDOWM_REQUEST 10 // 10% Low battery shutdown request
-#define LOW_BATTERY_POWER_OFF 5         // 5% Force shutdown
-#define LOW_BATTERY_MAX_COUNT 250       // 5000 / 20ms, Confirm low battery for 5 seconds continuously
+#define LOW_BATTERY_WARNING 20  // 20% Low battery warning（led flashing）
+#define LOW_BATTERY_POWER_OFF 0 // 0% Force shutdown
 
 extern uint8_t shutdownRequest;
 
@@ -299,81 +300,117 @@ void updatePowerData()
     readBatCrnt();
     readUsbCrnt();
     readOutputCrnt();
-    calcBatPct();
     checkPowerSouce();
+    updateBatCapacity();
+    batCapacity2Pct();
 
     // ---- status judgment ----
-    // isUsbPlugged
-    if (usbVolt > USB_MIN_VOLTAGE)
+    // isBatPlugged
+    if (batVolt > BAT_MIN_VOLTAGE)
     {
-        isUsbPlugged = 1;
+        isBatPlugged = true;
     }
     else
     {
-        isUsbPlugged = 0;
+        isBatPlugged = false;
+    }
+
+    // isUsbPlugged
+    if (usbVolt > USB_MIN_VOLTAGE)
+    {
+        isUsbPlugged = true;
+    }
+    else
+    {
+        isUsbPlugged = false;
     }
 
     // isCharging
-    if (batCrnt > 100)
+    if (batCrnt > BAT_IS_CHG_MIN_CRNT)
     {
-        isCharging = 1;
+        isCharging = true;
     }
-    else if (batCrnt < 20)
+    else if (batCrnt < 50)
     {
-        isCharging = 0;
+        isCharging = false;
+    }
+
+    // isBatteryPowered
+    if (batCrnt < -BAT_IS_POWERD_MIN_CRNT)
+    {
+        isBatPowered = true;
+    }
+    else
+    {
+        isBatPowered = false;
     }
 
     // isLowPower
     if (batPct < LOW_BATTERY_WARNING)
     {
-        isLowBattery = 1;
+        isLowBattery = true;
     }
     else
     {
-        isLowBattery = 0;
+        isLowBattery = false;
     }
 
     // ---- set rgb mode ----
-    if (isCharging)
+    if (rgbMode != RGB_MODE_WAIT_SHUTDOWN)
     {
-        rgbMode = RGB_MODE_CHARGING;
-    }
-    else if (isLowBattery)
-    {
-        rgbMode = RGB_MODE_LOW_BATTERY;
-    }
-    else if (powerSource == 1)
-    {
-        rgbMode = RGB_MODE_BAT_POWERED;
-    }
-    else if (powerSource == 0)
-    {
-        rgbMode = RGB_MODE_USB_POWERED;
+        if (isCharging)
+        {
+            rgbMode = RGB_MODE_CHARGING;
+        }
+        else if (isLowBattery)
+        {
+            rgbMode = RGB_MODE_LOW_BATTERY;
+        }
+        else
+        {
+            if (isBatPowered)
+            {
+                rgbMode = RGB_MODE_BAT_POWERED;
+            }
+            else
+            {
+                rgbMode = RGB_MODE_USB_POWERED;
+            }
+        }
     }
 
     // ---- fill data into dataBuffer ----
-    dataBuffer[1] = chg3V3Volt >> 8 & 0xFF;
-    dataBuffer[2] = chg3V3Volt & 0xFF;
+    dataBuffer[1] = usbVolt >> 8 & 0xFF;
+    dataBuffer[0] = usbVolt & 0xFF;
 
-    dataBuffer[3] = usbVolt >> 8 & 0xFF;
-    dataBuffer[4] = usbVolt & 0xFF;
+    dataBuffer[3] = usbCrnt >> 8 & 0xFF;
+    dataBuffer[2] = usbCrnt & 0xFF;
 
-    dataBuffer[5] = usbCrnt >> 8 & 0xFF;
-    dataBuffer[6] = usbCrnt & 0xFF;
+    dataBuffer[5] = outputVolt >> 8 & 0xFF;
+    dataBuffer[4] = outputVolt & 0xFF;
 
-    dataBuffer[7] = outputVolt >> 8 & 0xFF;
-    dataBuffer[8] = outputVolt & 0xFF;
+    dataBuffer[7] = outputCrnt >> 8 & 0xFF;
+    dataBuffer[6] = outputCrnt & 0xFF;
 
-    dataBuffer[9] = outputCrnt >> 8 & 0xFF;
-    dataBuffer[10] = outputCrnt & 0xFF;
+    dataBuffer[9] = batVolt >> 8 & 0xFF;
+    dataBuffer[8] = batVolt & 0xFF;
 
-    dataBuffer[11] = batVolt >> 8 & 0xFF;
-    dataBuffer[12] = batVolt & 0xFF;
+    dataBuffer[11] = ((uint16_t)batCrnt) >> 8 & 0xFF;
+    dataBuffer[10] = ((uint16_t)batCrnt) & 0xFF;
 
-    dataBuffer[13] = ((uint16_t)batCrnt) >> 8 & 0xFF;
-    dataBuffer[14] = ((uint16_t)batCrnt) & 0xFF;
+    dataBuffer[12] = batPct & 0xFF;
 
-    dataBuffer[22] = shutdownRequest;
+    dataBuffer[14] = ((uint16_t)batCapacity) >> 8 & 0xFF;
+    dataBuffer[13] = ((uint16_t)batCapacity) & 0xFF;
+
+    dataBuffer[15] = isBatPowered & 0xFF;
+    dataBuffer[16] = isUsbPlugged & 0xFF;
+    dataBuffer[17] = isBatPlugged & 0xFF;
+    dataBuffer[18] = isCharging & 0xFF;
+
+    dataBuffer[19] = config.fanPower & 0xFF;
+
+    dataBuffer[20] = shutdownRequest;
 
     //-------------fill data into json---------------------
     dataDoc["status"] = "true";
@@ -386,74 +423,50 @@ void updatePowerData()
     dataDoc["data"]["is_charging"] = isCharging;
     dataDoc["data"]["battery_voltage"] = batVolt;
     dataDoc["data"]["battery_current"] = batCrnt;
+    dataDoc["data"]["battery_capacity"] = batCapacity;
 
     dataDoc["data"]["output_voltage"] = outputVolt;
     dataDoc["data"]["output_current"] = outputCrnt;
 
     dataDoc["data"]["output_state"] = outputState;
-    dataDoc["data"]["power_source"] = powerSource;
+    dataDoc["data"]["power_source"] = (uint8_t)powerSource;
 
     powerDataFilter();
 }
 
-/** lowBatteryHandler
- */
-#define LOW_BATTERY_WARNING 20          // 20% Low battery warning（led flashing）
-#define LOW_BATTERY_SHUTDOWM_REQUEST 10 // 10% Low battery shutdown request
-#define LOW_BATTERY_POWER_OFF 5         // 5% Force shutdown
-#define LOW_BATTERY_MAX_COUNT 250       // 5000 / 20ms, Confirm low battery for 5 seconds continuously
+void updateShutdownPct()
+{
+    if (config.shutdownPct != settingBuffer[9])
+    {
+        config.shutdownPct = settingBuffer[9];
+        dataBuffer[143] = config.shutdownPct;
 
+        configPrefs.begin(CONFIG_PREFS_NAMESPACE); // namespace
+        configPrefs.putUChar(SHUTDOWN_PCT_KEYNAME, config.shutdownPct);
+        configPrefs.end();
+    }
+}
+
+void updateFanPower()
+{
+    if (config.fanPower != settingBuffer[0])
+    {
+        config.fanPower = settingBuffer[0];
+        dataBuffer[19] = config.fanPower;
+
+        configPrefs.begin(CONFIG_PREFS_NAMESPACE);
+        configPrefs.putUChar(FAN_POWER_KEYNAME, config.fanPower);
+        configPrefs.end();
+
+        fanSet(config.fanPower);
+    }
+}
+
+/* ----------- lowBatHandler -----------*/
+#define LOW_BATTERY_MAX_COUNT 100 // 5000 / 50ms, Confirm low battery for 5 seconds continuously
 uint16_t lowPowerCount = 0;
-uint8_t shutdown_pct = 0;
-uint8_t poweroff_pct = 0;
 
-void shutdownBatteryPctHandler()
-{
-    if (shutdown_pct != settingBuffer[9])
-    {
-        shutdown_pct = settingBuffer[9];
-        dataBuffer[143] = shutdown_pct;
-
-        prefs.begin(PREFS_NAMESPACE); // namespace
-        prefs.putUChar(SHUTDOWN_PCT_KEYNAME, shutdown_pct);
-        prefs.end();
-
-        config.shutdownPct = shutdown_pct;
-    }
-
-    if (poweroff_pct != settingBuffer[10])
-    {
-        poweroff_pct = settingBuffer[10];
-        dataBuffer[144] = poweroff_pct;
-
-        prefs.begin(PREFS_NAMESPACE); // namespace
-        prefs.putUChar(POWEROFF_PCT_KEYNAME, poweroff_pct);
-        prefs.end();
-
-        config.poweroffPct = poweroff_pct;
-    }
-}
-
-/* ----------- shutdown -----------*/
-void shutdown()
-{
-    shutdownRequest = 0;
-    dataBuffer[22] = 0; // reset shutdownRequest
-    rgbMode = RGB_MODE_OFF;
-
-    if (isUsbPlugged)
-    {
-        powerOutClose();
-    }
-    else
-    {
-        rgbClose();
-        // powerSave();
-    }
-}
-
-/* ----------- lowBatteryHandler -----------*/
-void lowBatteryHandler()
+void lowBatHandler()
 {
     // usb 插入时不处理
     if (isUsbPlugged)
@@ -462,7 +475,7 @@ void lowBatteryHandler()
     }
     else
     {
-        if (batPct < LOW_BATTERY_SHUTDOWM_REQUEST)
+        if (batPct < config.shutdownPct)
         {
             lowPowerCount++;
             if (lowPowerCount >= LOW_BATTERY_MAX_COUNT)
@@ -474,7 +487,8 @@ void lowBatteryHandler()
                 }
                 else
                 {
-                    shutdown(); // 5% Force shutdown
+                    lowPowerCount = 0;
+                    shutdown(); // Force shutdown
                 }
             }
         }
@@ -485,15 +499,89 @@ void lowBatteryHandler()
     }
 }
 
+/* ----------- shutdown -----------*/
+void shutdown()
+{
+    longPressTimeCnt = 0;
+    shutdownRequest = 0;
+    dataBuffer[22] = 0; // reset shutdownRequest
+    rgbMode = RGB_MODE_OFF;
+
+    if (isUsbPlugged)
+    {
+        powerOutClose();
+    }
+    else
+    {
+        rgbClose();
+        powerOutClose();
+        saveBatCapacity();
+        batEN(0);
+    }
+}
+
+/* ----------- rpiStateHandler -----------*/
+#define MAX_NO_NEED_OUTPUT_COUNT 20
+uint16_t noNeedOutputCount = 0;
+
+void rpiStateHandler()
+{
+    if (outputCrnt < RPI_NEED_MIN_CRNT)
+    {
+        noNeedOutputCount++;
+        if (noNeedOutputCount > MAX_NO_NEED_OUTPUT_COUNT)
+        {
+            noNeedOutputCount = 0;
+            shutdown();
+        }
+    }
+    else
+    {
+        noNeedOutputCount = 0;
+    }
+}
+
+/* ----------- UsbUnpluggedHandler -----------*/
+#define MAX_USB_UNPLUGGED_COUNT 20
+uint16_t usbUnpluggedCount = 0;
+
+void UsbUnpluggedHandler()
+{
+    if (outputState == 0 && !isUsbPlugged)
+    {
+        usbUnpluggedCount++;
+        if (usbUnpluggedCount > MAX_NO_NEED_OUTPUT_COUNT)
+        {
+            usbUnpluggedCount = 0;
+            shutdown();
+        }
+    }
+    else
+    {
+        usbUnpluggedCount = 0;
+    }
+}
+
 /* ----------- powerManage -----------*/
 void powerManage()
 {
     updatePowerData();
-    // chargeAdjust(powerSourceVolt, usbVolt);
-    shutdownBatteryPctHandler();
+    chargeAdjust(powerSource, usbVolt);
+    lowBatHandler();
+    rpiStateHandler();
+    UsbUnpluggedHandler();
 
-    // lowBatteryHandler();
-    // rpiStateHandler();
+    if (outputState == 0)
+    {
+        if (isCharging)
+        {
+            rgbMode = RGB_MODE_CHARGING;
+        }
+        else
+        {
+            rgbMode = RGB_MODE_OFF;
+        }
+    }
 }
 
 // saveDataIntoSD
@@ -570,38 +658,101 @@ void keyEventHandler()
     switch (keyState)
     {
     case SingleClicked: // 单击开启输出
-        keyState = Released;
-        powerOutOpen();
+        keyStateReset();
+        batEN(1);
+
+        shutdownRequest = 0;
+        dataBuffer[20] = 0; // reset shutdownRequest
+        rgbMode = RGB_MODE_OFF;
+
         rgbWrite(0, 255, 0);
         delay(100);
         rgbClose();
+
+        powerOutOpen();
+
+        if (!isUsbPlugged)
+        {
+            if (batPct <= config.shutdownPct || batPct <= LOW_BATTERY_POWER_OFF)
+            {
+                for (int i = 0; i < 3; i++)
+                {
+                    rgbWrite(LOW_BATTERY_COLOR);
+                    delay(RGB_BLINK_INTERVAL);
+                    rgbClose();
+                    delay(RGB_BLINK_INTERVAL);
+                }
+                rgbClose();
+                longPressTimeCnt = 0;
+                powerOutClose();
+                batEN(0);
+            }
+            else
+            {
+                powerOutOpen();
+            }
+        }
+        else
+        {
+            powerOutOpen();
+        }
+
         break;
     case DouleClicked:
-        keyState = Released;
+        keyStateReset();
         rgbWrite(0, 0, 255);
         delay(100);
         rgbClose();
+        powerOutClose();
         pi5BtnDoubleClick();
-        enterDeepSleep();
+        while (1)
+        {
+            if (!BTN)
+            {
+                delay(5);
+                if (!BTN)
+                {
+                    delay(20);
+                    longPressTimeCnt = 0;
+                    break;
+                }
+            }
+            delay(5);
+        }
         break;
     case LongPressed2S:
-        rgbWrite(255, 120, 0);
+        rgbWrite(255, 0, 255);
         break;
     case LongPressed2SAndReleased:
-        keyState = Released;
+        keyStateReset();
         rgbClose();
-        //
         requestShutDown(2); // 2，button shutdown request
         rgbMode = RGB_MODE_WAIT_SHUTDOWN;
         break;
     case LongPressed5S:
         rgbWrite(255, 0, 0);
+        rgbWrite(0, 0, 255);
+        delay(100);
+        rgbClose();
+        powerOutClose();
+        pi5BtnDoubleClick();
+        while (1)
+        {
+            if (!BTN)
+            {
+                delay(5);
+                if (!BTN)
+                {
+                    delay(20);
+                    longPressTimeCnt = 0;
+                    break;
+                }
+            }
+            delay(5);
+        }
         break;
     case LongPressed5SAndReleased:
-        keyState = Released;
-        rgbClose();
-        //
-        // shutdown();
+        keyStateReset();
         break;
     default:
         break;
@@ -612,7 +763,20 @@ void keyEventHandler()
 // =================================================================
 void setup()
 {
+    uint32_t startTime;
+
+    startTime = millis();
     Serial.begin(115200);
+
+    // --- io init ---
+    btnInit();
+    powerIoInit();
+    batEN(1);
+    // powerManagerAtStart();
+
+    // --- rgb led & bootRgbAnimationStop ---
+    rgbLEDInit();
+    bootRGBAnimationStart();
 
     // --- fill info ---
     dataBuffer[140] = BOARD_ID; // board_id
@@ -620,75 +784,59 @@ void setup()
     dataBuffer[129] = VERSION_MINOR;
     dataBuffer[130] = VERSION_MICRO;
 
-    shutdown_pct = LOW_BATTERY_SHUTDOWM_REQUEST;
-    poweroff_pct = LOW_BATTERY_POWER_OFF;
-    dataBuffer[143] = shutdown_pct;
-    settingBuffer[9] = shutdown_pct;
-    dataBuffer[144] = poweroff_pct;
-    settingBuffer[10] = poweroff_pct;
-
     // --- peripherals init ---
-    rgbLEDInit();
-    rgbWrite(255, 255, 255); // Initializing indicator light
-
-    powerIoInit();
-    fanInit();
-    btnInit();
-    tim0Init();
     i2cInit();
+    fanInit();
     chgCrntCtrlInit();
+    tim0Init();
 
     // --- print info ---
-    delay(1000);      // wait for PC to detect the serial port
+    if (millis() - startTime < 1000)
+    {
+        delay(startTime + 1000 - millis());
+    }
+    // delay(1000);      // wait for PC to detect the serial port
     Serial.println(); // new line
-    Serial.println("##################################################");
+    Serial.println(F("##################################################"));
     Serial.printf("SPC firmware %s\n", VERSION);
     Serial.println(); // new line
 
-    ++bootCount;
-    // Serial.println("Boot number: " + String(bootCount));
-    info("Boot number: %d", bootCount);
-    print_wakeup_reason();
-    print_GPIO_wake_up();
-    Serial.println(); // new line
+    // --- battery capacity init ---
+    batCapacityInit();
 
-    // --- power output at start ---
-    // powerManagerAtStart()
-
-    // --- SPIFFS (LittleFS) init ---
-    if (!SPIFFS.begin())
-    {
-        listDir(SPIFFS, "/", 2);
-    }
+    // --- whether ouput ---
+    powerManagerAtStart();
 
     // --- SD init & read config file form SD ---
-    hasSD = SD_Init();
+    SD_Init();
+    sdDetectEventInit();
     if (hasSD)
     {
         createDir(SD, HISTORY_ROOT_DIR);
         listDir(SD, "/", 2);
-        // --- read config file form SD to SPIFFS---
-        // copyConfigFromSD2SPIFFS();
+        // --- read config file form SD ---
         readConfigFormSD(true);
     }
-    // SD.end();
 
-    // --- load config ---
+    // ---load config-- -
     loadPreferences();
+    settingBuffer[0] = config.fanPower;
+    settingBuffer[9] = config.shutdownPct;
+    fanSet(config.fanPower);
 
     // --- wifi connecting ---
     wifiStart();
     delay(10);
 
-    // -- -mDNS &webpage-- -
+    // --- mDNS ---
     Serial.println();
     mDNSInit(config.hostname);
 
+    // --- webpage ---
     info("Webpage start ...");
     WebpageConfig webConfig;
     webConfig.version = VERSION;
     webConfig.onData = myOnData;
-    webConfig.onConfig = myOnConfig;
     webPageBegin(&webConfig);
 
     // --- MQTT ---
@@ -699,19 +847,24 @@ void setup()
     // mqttClient.subscribe("test");
 
     // --- time sync ---
-    ntpTimeInit();
+    if (config.autoTimeEnable)
+    {
+        ntpTimeInit();
+    }
+
+    // --- bootRgbAnimationStop ---
+    bootRgbAnimationStop();
+    delay(100);
 }
 
-uint8_t fanSpeed = 0;
 void loop()
 {
-
     keyStateHandler();
     keyEventHandler();
 
-    if (time20Cnt >= 20)
+    if (time50Cnt >= 50)
     {
-        time20Cnt = 0;
+        time50Cnt = 0;
 
         // if (test_flag)
         // {
@@ -723,27 +876,21 @@ void loop()
         //     test_flag = 1;
         //     testPinSet(0);
         // }
-
-        chgCrntCtrl(0);
-
-        webPageLoop();
+        updateShutdownPct();
+        updateFanPower();
         powerManage();
         rgbHandler();
-
-        fanSpeed = 100;
-        dataDoc["data"]["fan_power"] = fanSpeed;
-        fanSet(100);
     }
 
-    if (time1000Cnt > 1000)
-    {
-        Serial.printf("free: %d\n", ESP.getFreeHeap());
+    // if (time1000Cnt > 1000)
+    // {
+    //     Serial.printf("free: %d\n", ESP.getFreeHeap());
 
-        // mqttClient.publish("test", "esp32-spc");
-        saveDataIntoSD();
-        time1000Cnt = 0;
-        // Serial.println("loop ...");
-    }
+    //     // mqttClient.publish("test", "esp32-spc");
+    //     // saveDataIntoSD();
+    //     time1000Cnt = 0;
+    //     // Serial.println("loop ...");
+    // }
 
     // TODO: if wifi disconnect, then reconnect, interval 3s
     delayMicroseconds(50);
