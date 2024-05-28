@@ -40,8 +40,8 @@
 
 #define DEFAULT_FAN_POWER 75
 
-#define DEFAULT_SD_DATA_INTERVAL 1  // seconds
-#define DEFAULT_SD_DATA_RETAIN 1000 // days
+#define DEFAULT_SD_DATA_INTERVAL 1 // seconds
+#define DEFAULT_SD_DATA_RETAIN 7   // days
 
 struct Config
 {
