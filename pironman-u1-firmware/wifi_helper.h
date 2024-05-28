@@ -37,7 +37,8 @@ public:
     WiFiHelper();
     String apIP = "";
     String staIP = "";
-    bool is_connected = false;
+    static bool is_connected;
+    static uint8_t staDisconnectReason;
     void setMode(wifi_mode_t mode);
     void closeSTA();
     bool connectSTA(String ssid, String password);
