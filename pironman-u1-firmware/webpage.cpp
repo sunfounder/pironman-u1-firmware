@@ -42,10 +42,11 @@ String _updaterError;
 size_t content_len;
 WiFiHelper mywifi;
 
+String _client_ip = "";
 // ----------------------------------------------------------------
 void mDNSInit(String hostname)
 {
-    info("mDNS start: %s", hostname.c_str());
+    info("mDNS start: %s\n", hostname.c_str());
     MDNS.begin(hostname);
 }
 
@@ -58,9 +59,60 @@ void _setUpdaterError()
     _updaterError = str.c_str();
 }
 
-void setWiFiConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setSTASwitchHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("setting STA wifi");
+    debug("setting STA switch\n");
+
+    // --- convert into json ---
+    DynamicJsonDocument doc(256);
+    deserializeJson(doc, (const char *)data);
+
+    if (!doc.containsKey("sta_switch"))
+    {
+        doc.clear();
+        request->send_P(200, "application/json", invalidKeyJson);
+        return;
+    }
+
+    bool sw = doc["sta_switch"];
+    doc.clear();
+
+    // --- copy the config ---
+    configPrefs.begin(CONFIG_PREFS_NAMESPACE);
+    if (sw)
+    {
+        configPrefs.putUChar(STA_ENABLE_KEYNAME, 1);
+    }
+    else
+    {
+        configPrefs.putUChar(STA_ENABLE_KEYNAME, 0);
+    }
+    configPrefs.end();
+
+    config.staENABLE = sw;
+
+    info("config STA -> switch: %d\n", config.staENABLE);
+
+    // ---  ---
+    if (sw)
+    {
+        info("restart STA -> ssid: %s, psk: %s\n", config.staSSID, config.staPSK);
+        WiFi.enableSTA(true);
+        WiFi.begin(config.staSSID, config.staPSK);
+    }
+    else
+    {
+        info("close STA");
+        WiFi.enableSTA(false);
+    }
+
+    // ---- response ----
+    request->send_P(200, "application/json", okJson);
+}
+
+void setWiFiConfigHandler(AsyncWebServerRequest *request, uint8_t *data)
+{
+    debug("setting STA wifi\n");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -105,9 +157,9 @@ void setWiFiConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setWiFiRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setWiFiRestartHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("restart STA wifi");
+    debug("restart STA wifi\n");
 
     // --- response before operation ---
     request->send_P(200, "application/json", okJson);
@@ -127,9 +179,9 @@ void setWiFiRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
     }
 }
 
-void setAPConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setAPConfigHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("setting AP");
+    debug("setting AP\n");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -161,9 +213,9 @@ void setAPConfigHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setAPRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setAPRestartHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("restart AP");
+    debug("restart AP\n");
 
     // --- response before operation ---
     request->send_P(200, "application/json", okJson);
@@ -175,9 +227,9 @@ void setAPRestartHandle(AsyncWebServerRequest *request, uint8_t *data)
     WiFi.softAP(config.apSSID, config.apPSK);
 }
 
-void setOutputHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setOutputHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("setting Output");
+    debug("setting Output\n");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -215,9 +267,9 @@ void setOutputHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setAutoTimeHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setAutoTimeHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("setting AutoTime");
+    debug("setting AutoTime\n");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -254,7 +306,7 @@ void setAutoTimeHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setTimestampHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setTimestampHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -281,7 +333,7 @@ void setTimestampHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setTimeZoneHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setTimeZoneHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -313,7 +365,7 @@ void setTimeZoneHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setNTPServerHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setNTPServerHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -348,9 +400,9 @@ void setNTPServerHandle(AsyncWebServerRequest *request, uint8_t *data)
 // -----------------------
 extern uint8_t settingBuffer[];
 
-void setFanPowerHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setFanPowerHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
-    debug("setting Fan Power");
+    debug("setting Fan Power\n");
 
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -374,7 +426,7 @@ void setFanPowerHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setShutdownPctHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -404,7 +456,7 @@ void setShutdownPctHandle(AsyncWebServerRequest *request, uint8_t *data)
 
 // -----------------------
 
-void setSDDataIntervalHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setSDDataIntervalHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
@@ -433,20 +485,20 @@ void setSDDataIntervalHandle(AsyncWebServerRequest *request, uint8_t *data)
     request->send_P(200, "application/json", okJson);
 }
 
-void setSDDataRetainHandle(AsyncWebServerRequest *request, uint8_t *data)
+void setSDDataRetainHandler(AsyncWebServerRequest *request, uint8_t *data)
 {
     // --- convert into json ---
     DynamicJsonDocument doc(256);
     deserializeJson(doc, (const char *)data);
 
-    if (!doc.containsKey("interval"))
+    if (!doc.containsKey("retain"))
     {
         doc.clear();
         request->send_P(200, "application/json", invalidKeyJson);
         return;
     }
 
-    uint16_t _retain = doc["_retain"];
+    uint16_t _retain = doc["retain"];
     doc.clear();
 
     // --- copy the config ---
@@ -456,13 +508,13 @@ void setSDDataRetainHandle(AsyncWebServerRequest *request, uint8_t *data)
     configPrefs.putUInt(SD_DATA_RETAIN_KEYNAME, _retain);
     configPrefs.end();
 
-    config.sdDataInterval = _retain;
+    config.sdDataRetain = _retain;
 
     // ---- response ----
     request->send_P(200, "application/json", okJson);
 }
 
-void handleDoUpdate(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
+void otaHandler(AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data, size_t len, bool final)
 {
     if (!index)
     {
@@ -527,15 +579,17 @@ void webPageBegin(WebpageConfig *webConfig)
     server.on("/", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  String _ip = request->client()->remoteIP().toString();
-                  debug("remoteIP: %s", _ip.c_str());
-
-                  //   Serial.printf("free: %d\n", ESP.getFreeHeap());
-
-                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len);
-                  response->addHeader("Content-Encoding", "gzip");
-                  response->addHeader("Cache-Control", "no-cache");
-                  request->send(response);
+                  if (_client_ip != "")
+                  {
+                      request->send_P(200, "text/html", waitHtml);
+                  }
+                  else
+                  {
+                      AsyncWebServerResponse *response = request->beginResponse_P(200, "text/html", index_html_gz, index_html_gz_len);
+                      response->addHeader("Content-Encoding", "gzip");
+                      response->addHeader("Cache-Control", "no-cache");
+                      request->send(response);
+                  }
 
                   //   request->send(SPIFFS, "/www/index.html", "text/html");
               });
@@ -550,31 +604,62 @@ void webPageBegin(WebpageConfig *webConfig)
 
                   //   request->send(SPIFFS, "/www/index.css", "text/css");
               });
-    server.on("/static/css/main.css", HTTP_GET,
+#if 0
+    server.on("/static/css/main.91c96fec.css", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", main_css_gz, main_css_gz_len);
+                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/css", main_91c96fec_css_gz, main_91c96fec_css_gz_len);
                   response->addHeader("Content-Encoding", "gzip");
                   response->addHeader("Cache-Control", "max-age=6000");
                   request->send(response);
 
                   //   request->send(SPIFFS, "/www/styles.css", "text/css");
               });
+#else
+    server.on("/static/css/main.91c96fec.css", HTTP_GET,
+              [](AsyncWebServerRequest *request)
+              {
+                  AsyncWebServerResponse *response = request->beginChunkedResponse(
+                      "text/css",
+                      [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
+                      {
+                          //   debug("chunk max len: %d\n", maxLen);
+                          uint32_t size = main_91c96fec_css_gz_len - index;
+                          if (MAX_CHUNK_SIZE < maxLen)
+                          {
+                              if (size > MAX_CHUNK_SIZE)
+                              {
+                                  size = MAX_CHUNK_SIZE;
+                              }
+                          }
+                          else
+                          {
+                              if (size > maxLen)
+                              {
+                                  size = maxLen;
+                              }
+                          }
+                          //   debug("chunk send: %d\n", size);
+                          memcpy(buffer, main_91c96fec_css_gz + index, size);
 
-    //
-
-    // server.on("/asset-manifest.json", HTTP_GET,
-    //           [](AsyncWebServerRequest *request)
-    //           {
-    //               request->send_P(200, "application/json", asset_manifest);
-    //           });
+                          if (size == 0)
+                          {
+                              _client_ip = "";
+                          }
+                          return size;
+                      });
+                  response->addHeader("Content-Encoding", "gzip");
+                  response->addHeader("Cache-Control", "max-age=6000");
+                  request->send(response);
+              });
+#endif
 
 // js
 #if 0
-    server.on("/static/js/main.js", HTTP_GET,
+    server.on("/static/js/main.335506f5.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
-                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/javascript", main_js_gz, main_js_gz_len);
+                  AsyncWebServerResponse *response = request->beginResponse_P(200, "text/javascript", main_335506f5_js_gz, main_335506f5_js_gz_len);
                   response->addHeader("Content-Encoding", "gzip");
                   response->addHeader("Cache-Control", "max-age=6000");
                   request->send(response);
@@ -582,23 +667,46 @@ void webPageBegin(WebpageConfig *webConfig)
                   //   request->send(SPIFFS, "/www/script.js", "text/javascript");
               });
 #else
-    server.on("/static/js/main.js", HTTP_GET,
+    server.on("/static/js/main.335506f5.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
+                  _client_ip = request->client()->remoteIP().toString();
+                  debug("remoteIP: %s\n", _client_ip.c_str());
+
+                  request->onDisconnect(
+                      []()
+                      {
+                          _client_ip = "";
+                      });
+
                   AsyncWebServerResponse *response = request->beginChunkedResponse(
                       "text/javascript",
                       [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
                       {
-                          if (main_js_gz_len - index >= maxLen)
+                          //   debug("chunk max len: %d\n", maxLen);
+                          uint32_t size = main_335506f5_js_gz_len - index;
+                          if (MAX_CHUNK_SIZE < maxLen)
                           {
-                              memcpy(buffer, main_js_gz + index, maxLen);
-                              return maxLen;
+                              if (size > MAX_CHUNK_SIZE)
+                              {
+                                  size = MAX_CHUNK_SIZE;
+                              }
                           }
                           else
-                          { // last chunk and then 0
-                              memcpy(buffer, main_js_gz + index, main_js_gz_len - index);
-                              return main_js_gz_len - index;
+                          {
+                              if (size > maxLen)
+                              {
+                                  size = maxLen;
+                              }
                           }
+                          //   debug("chunk send: %d\n", size);
+                          memcpy(buffer, main_335506f5_js_gz + index, size);
+
+                          if (size == 0)
+                          {
+                              _client_ip = "";
+                          }
+                          return size;
                       });
                   response->addHeader("Content-Encoding", "gzip");
                   response->addHeader("Cache-Control", "max-age=6000");
@@ -672,7 +780,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   json += ",\"auto_time_switch\":" + String(config.autoTimeEnable ? "true" : "false");
                   json += ",\"ntp_server\":\"" + String(config.ntpServe) + "\"";
                   json += ",\"mac_address\":\"" + String(WiFi.macAddress()) + "\"";
-                  json += ",\"ip_address\":\"" + WiFi.localIP().toString() + "\"";
+                  json += ",\"ip_address\":\"" + String(WiFiHelper::is_connected ? WiFi.localIP().toString() : "") + "\"";
                   json += ",\"sd_card_used\":" + String(SD.usedBytes() / (1024 * 1024));
                   json += ",\"sd_card_total\":" + String(SD.totalBytes() / (1024 * 1024));
                   json += ",\"sd_card_data_interval\":" + String(config.sdDataInterval);
@@ -842,7 +950,7 @@ void webPageBegin(WebpageConfig *webConfig)
               {
                   String json = "{";
                   json += "\"status\":true";
-                  json += ",\"data\":\"" + WiFi.localIP().toString() + "\"";
+                  json += ",\"data\":\"" + String(WiFiHelper::is_connected ? WiFi.localIP().toString() : "") + "\"";
                   json += "}";
 
                   request->send(200, "application/json", json);
@@ -866,92 +974,98 @@ void webPageBegin(WebpageConfig *webConfig)
             // set-config
             if (request->url() == "/api/v1.0/set-config")
             {
-                Serial.printf("[REQUEST][set-config] %s\n", (const char *)data);
+                debug("[REQUEST][set-config] %s\n", (const char *)data);
             }
             // set-output
             else if (request->url() == "/api/v1.0/set-output")
             {
-                Serial.printf("[REQUEST][set-output] %s\n", (const char *)data);
-                setOutputHandle(request, data);
+                debug("[REQUEST][set-output] %s\n", (const char *)data);
+                setOutputHandler(request, data);
+            }
+            // set-sta-switch
+            else if (request->url() == "/api/v1.0/set-sta-switch")
+            {
+                debug("[REQUEST][set-sta-switch] %s\n", (const char *)data);
+                setSTASwitchHandler(request, data);
             }
             // set-wifi-config
             else if (request->url() == "/api/v1.0/set-wifi-config")
             {
-                Serial.printf("[REQUEST][set-wifi-config] %s\n", (const char *)data);
-                setWiFiConfigHandle(request, data);
+                debug("[REQUEST][set-wifi-config] %s\n", (const char *)data);
+                setWiFiConfigHandler(request, data);
             }
             // set-wifi-restart
             else if (request->url() == "/api/v1.0/set-wifi-restart")
             {
-                Serial.printf("[REQUEST][set-wifi-restart] %s\n", (const char *)data);
-                setWiFiRestartHandle(request, data);
+                debug("[REQUEST][set-wifi-restart] %s\n", (const char *)data);
+                setWiFiRestartHandler(request, data);
             }
             // set-ap-config
             else if (request->url() == "/api/v1.0/set-ap-config")
             {
-                Serial.printf("[REQUEST][set-ap-config] %s\n", (const char *)data);
-                setAPConfigHandle(request, data);
+                debug("[REQUEST][set-ap-config] %s\n", (const char *)data);
+                setAPConfigHandler(request, data);
             }
             // set-ap-restart
             else if (request->url() == "/api/v1.0/set-ap-restart")
             {
-                Serial.printf("[REQUEST][set-ap-restart] %s\n", (const char *)data);
-                setAPRestartHandle(request, data);
+                debug("[REQUEST][set-ap-restart] %s\n", (const char *)data);
+                setAPRestartHandler(request, data);
             }
             // set-shutdown-percentage
             else if (request->url() == "/api/v1.0/set-shutdown-percentage")
             {
-                Serial.printf("[REQUEST][set-shutdown-percentage] %s\n", (const char *)data);
-                setShutdownPctHandle(request, data);
+                debug("[REQUEST][set-shutdown-percentage] %s\n", (const char *)data);
+                setShutdownPctHandler(request, data);
             }
             // set-auto-time
             else if (request->url() == "/api/v1.0/set-auto-time")
             {
-                Serial.printf("[REQUEST][set-auto-time] %s\n", (const char *)data);
-                setAutoTimeHandle(request, data);
+                debug("[REQUEST][set-auto-time] %s\n", (const char *)data);
+                setAutoTimeHandler(request, data);
             }
             // set-timestamp
             else if (request->url() == "/api/v1.0/set-timestamp")
             {
-                Serial.printf("[REQUEST][set-timestamp] %s\n", (const char *)data);
-                setTimestampHandle(request, data);
+                debug("[REQUEST][set-timestamp] %s\n", (const char *)data);
+                setTimestampHandler(request, data);
             }
             // set-timezone
             else if (request->url() == "/api/v1.0/set-timezone")
             {
-                Serial.printf("[REQUEST][set-timezone] %s\n", (const char *)data);
-                setTimeZoneHandle(request, data);
+                debug("[REQUEST][set-timezone] %s\n", (const char *)data);
+                setTimeZoneHandler(request, data);
             }
             // set-ntp-server
             else if (request->url() == "/api/v1.0/set-ntp-server")
             {
-                Serial.printf("[REQUEST][set-ntp-server] %s\n", (const char *)data);
-                setNTPServerHandle(request, data);
+                debug("[REQUEST][set-ntp-server] %s\n", (const char *)data);
+                setNTPServerHandler(request, data);
             }
             // set-restart
             else if (request->url() == "/api/v1.0/set-restart")
             {
-                Serial.printf("[REQUEST][set-restart] %s\n", (const char *)data);
+                debug("[REQUEST][set-restart] %s\n", (const char *)data);
                 request->send_P(200, "application/json", okJson);
                 delay(100);
-                Serial.printf("restart now\n");
+                debug("restart now\n");
                 ESP.restart();
             }
             // set-fan-power
             else if (request->url() == "/api/v1.0/set-fan-power")
             {
-                Serial.printf("[REQUEST][set-fan-power] %s\n", (const char *)data);
-                setFanPowerHandle(request, data);
+                debug("[REQUEST][set-fan-power] %s\n", (const char *)data);
+                setFanPowerHandler(request, data);
             }
             else if (request->url() == "/api/v1.0/set-sd-data-interval")
             {
-                Serial.printf("[REQUEST][set-sd-data-interval] %s\n", (const char *)data);
-                setSDDataIntervalHandle(request, data);
+                debug("[REQUEST][set-sd-data-interval] %s\n", (const char *)data);
+                setSDDataIntervalHandler(request, data);
             }
             else if (request->url() == "/api/v1.0/set-sd-data-retain")
             {
-                Serial.printf("[REQUEST][set-sd-data-retain] %s\n", (const char *)data);
-                setSDDataRetainHandle(request, data);
+                debug("[REQUEST][set-sd-data-retain] %s\n", (const char *)data);
+                setSDDataRetainHandler(request, data);
             }
         });
 
@@ -976,7 +1090,7 @@ void webPageBegin(WebpageConfig *webConfig)
         [](AsyncWebServerRequest *request, const String &filename, size_t index, uint8_t *data,
            size_t len, bool final)
         {
-            handleDoUpdate(request, filename, index, data, len, final);
+            otaHandler(request, filename, index, data, len, final);
         });
 
     // ---------------- begin ----------------
