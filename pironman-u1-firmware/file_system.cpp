@@ -1,13 +1,6 @@
 #include "file_system.h"
 
-#define ENABLE_PRINT 0
-#if ENABLE_PRINT
-#define FS_Serial Serial
-#else
-#define FS_Serial Serial0
-#endif
-
-void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
+void listDir(fs::FS &fs, const char *dirname, uint8_t depth)
 {
     FS_Serial.printf("Listing directory: %s\n", dirname);
 
@@ -30,9 +23,9 @@ void listDir(fs::FS &fs, const char *dirname, uint8_t levels)
         {
             FS_Serial.print("  DIR : ");
             FS_Serial.println(file.name());
-            if (levels)
+            if (depth)
             {
-                listDir(fs, file.path(), levels - 1);
+                listDir(fs, file.path(), depth - 1);
             }
         }
         else
@@ -218,3 +211,140 @@ void testFileIO(fs::FS &fs, const char *path)
     FS_Serial.printf("%u bytes written for %u ms\n", 2048 * 512, end);
     file.close();
 }
+
+uint16_t fileCount(fs::FS &fs, const char *dirname, uint8_t depth)
+{
+    uint16_t count = 0;
+    FS_Serial.printf("file Count: %s\n", dirname);
+
+    File root = fs.open(dirname);
+    if (!root)
+    {
+        FS_Serial.println("Failed to open directory");
+        root.close();
+        return 0;
+    }
+    if (!root.isDirectory())
+    {
+        FS_Serial.println("Not a directory");
+        root.close();
+        return 0;
+    }
+
+    File file = root.openNextFile();
+    while (file)
+    {
+        if (!file.isDirectory())
+        {
+            // FS_Serial.println(file.name());
+            count++;
+        }
+        else
+        {
+            if (depth)
+            {
+                count += fileCount(fs, file.path(), depth - 1);
+            }
+        }
+        file = root.openNextFile();
+    }
+    FS_Serial.printf("%d files found in: %s\n", count, dirname);
+    root.close();
+    return count;
+}
+
+uint16_t deleteNFiles(fs::FS &fs, const char *dirname, uint16_t n, uint8_t depth)
+{
+    FS_Serial.printf("delete %d files in: %s(depth=%d)\n", n, dirname, depth);
+    // uint16_t nameLen = 50;
+    // char fname[nameLen];
+
+    char fname[50];
+    uint16_t count = 0;
+
+    File root = fs.open(dirname);
+    if (!root)
+    {
+        FS_Serial.println("Failed to open directory");
+        root.close();
+    }
+    if (!root.isDirectory())
+    {
+        FS_Serial.println("Not a directory");
+        root.close();
+    }
+
+    File file = root.openNextFile();
+    while (file)
+    {
+        if (!file.isDirectory())
+        {
+            sprintf(fname, "%s/%s", dirname, file.name());
+            FS_Serial.printf("delete file %s --- ", fname);
+            if (fs.remove(fname))
+            {
+                n--;
+                count++;
+                FS_Serial.println("ok");
+            }
+            else
+            {
+                FS_Serial.println("fail");
+            }
+            if (!n)
+            {
+
+                break;
+            }
+        }
+        else
+        {
+            if (depth)
+            {
+                count += deleteNFiles(fs, file.path(), n, depth - 1);
+                n -= count;
+            }
+        }
+
+        file = root.openNextFile();
+    }
+
+    root.close();
+
+    FS_Serial.printf("%d files has been delete\n", count);
+    return count;
+}
+
+// void findOldestFile(fs::FS &fs, const char *dirname, char *oldestFile, size_t len)
+// {
+//     FS_Serial.printf("find oldeset file : %s\n", dirname);
+
+//     File root = fs.open(dirname);
+
+//     File file = root.openNextFile();
+//     while (file)
+//     {
+//         if (!file.isDirectory())
+//         {
+//             strlcpy(oldestFile, file.name(), len);
+//             break;
+//         }
+//         file = root.openNextFile();
+//     }
+
+//     file = root.openNextFile();
+//     while (file)
+//     {
+//         if (!file.isDirectory())
+//         {
+//             if (strcmp(oldestFile, file.name()) > 0)
+//             {
+//                 strlcpy(oldestFile, file.name(), len);
+//             }
+//         }
+//         file = root.openNextFile();
+//     }
+
+//     FS_Serial.printf("oldestFile:%s\n", oldestFile);
+//     root.close();
+// }
