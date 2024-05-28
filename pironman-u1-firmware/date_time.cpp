@@ -7,6 +7,7 @@ time_t getTimeSample()
     return timesample;
 }
 
+#if 0 // has bugs
 void getTimeSampleAndDate(time_t timesample, tm timeinfo)
 {
     time(&timesample);
@@ -33,6 +34,7 @@ void getTimeSampleAndDate(time_t timesample, tm timeinfo)
         getLocalTime(&timeinfo);
     }
 }
+#endif
 
 void printLocalTime()
 {
@@ -77,27 +79,26 @@ void timeavailable(struct timeval *t)
     printLocalTime();
 }
 
-void ntpTimeInit()
+void datetimeInit()
 {
-    Serial.println("\nntpTimeInit");
+    Serial.println("\ndatetimeInit");
     // setenv("TZ", "CST-8", 1);
     setenv("TZ", config.timezone, 1); // POSIX Format: UTC+8 -> "UTC-8", UTC-8 -> "UTC8",
     tzset();
     // setTimeZone(-GMT_OFFSET_SEC, DAY_LIGHT_OFFSET_SEC);
     printLocalTime();
-    sntp_set_time_sync_notification_cb(timeavailable);
-    sntp_servermode_dhcp(1);
-    // configTime(GMT_OFFSET_SEC, DAY_LIGHT_OFFSET_SEC, NTP_SERVER);
-    configTime(0, 0, config.ntpServe);
-    // setenv("TZ", "CST-8", 1);
-    setenv("TZ", config.timezone, 1);
-    tzset();
+
+    if (config.autoTimeEnable)
+    {
+        ntpTimeSync();
+    }
 }
 
 void ntpTimeSync()
 {
     sntp_set_time_sync_notification_cb(timeavailable);
     sntp_servermode_dhcp(1);
+    // configTime(GMT_OFFSET_SEC, DAY_LIGHT_OFFSET_SEC, NTP_SERVER);
     configTime(0, 0, config.ntpServe);
     setenv("TZ", config.timezone, 1);
     tzset();
