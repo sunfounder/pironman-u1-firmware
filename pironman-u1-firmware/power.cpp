@@ -64,13 +64,28 @@ void powerIoInit(void)
     pinMode(DEFAULT_ON_PIN, INPUT);
     pinMode(POWER_SOURCE_PIN, INPUT);
 
-    // --- ooutput ---
+    // --- output ---
+#if 0
+    pinMode(DC_EN_PIN, OUTPUT);
+    digitalWrite(DC_EN_PIN, HIGH);
+
+    pinMode(USB_EN_PIN, OUTPUT);
+    digitalWrite(USB_EN_PIN, HIGH);
+
+    pinMode(BAT_EN_PIN, OUTPUT);
+    batEN(1);
+#endif
     pinMode(DC_EN_PIN, OUTPUT);
     pinMode(USB_EN_PIN, OUTPUT);
     pinMode(BAT_EN_PIN, OUTPUT);
-
-    powerOutClose();
-    batEN(1);
+    if (DEFAULT_ON)
+    {
+        delay(2); // software anti-shaking
+        if (DEFAULT_ON)
+        {
+            powerOutOpen(); // output open
+        }
+    }
 }
 
 bool checkDefaultOn()
