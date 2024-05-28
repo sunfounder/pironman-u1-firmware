@@ -2,7 +2,16 @@
 
 Firmware for Pironman U1
 
-## Dependencies
+## Dependent libraries
 
 - ArduinoJson
 - ESPAsyncWebSrv (or ESPAsyncWebServer <https://github.com/me-no-dev/ESPAsyncWebServer>)
+
+## Programming options
+
+<img src="./docs/program_options.jpg"  width="66%" align="center"/>
+
+## Link
+
+- Docs : <https://docs.sunfounder.com/en/latest/>
+- pironman-u1 (python code for pi) : <https://github.com/sunfounder/pironman-u1>
