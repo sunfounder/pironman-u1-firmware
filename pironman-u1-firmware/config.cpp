@@ -36,7 +36,7 @@ void loadPreferences()
     info("ntpServe: %s", config.ntpServe);
     info("shutdownPct: %d", config.shutdownPct);
     info("fanPower: %d", config.fanPower);
-    info("sdDataInterval: %d", config.shutdownPct);
+    info("sdDataInterval: %d", config.sdDataInterval);
     info("sdDataRetain: %d", config.sdDataRetain);
 }
 
