@@ -83,10 +83,10 @@ ADC:
 
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.8"
+#define VERSION "0.0.9"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
-#define VERSION_MICRO 8
+#define VERSION_MICRO 9
 
 #define BOARD_ID 0x00
 
@@ -194,10 +194,10 @@ void onReceive(int numBytes)
 
 void onRequest()
 {
-    Serial.print("onRequest: addr: ");
-    Serial.print(addr);
-    Serial.print(" , val: ");
-    Serial.println(dataBuffer[addr]);
+    // debug("onRequest: addr: ");
+    // debug(addr);
+    // debug(" , val: ");
+    // debug(dataBuffer[addr]);
 
     Wire.write(dataBuffer[addr++]);
 }
@@ -208,6 +208,7 @@ void i2cInit()
     Wire.onRequest(onRequest);
     Wire.begin((uint8_t)I2C_DEV_ADDR, I2C_SDA, I2C_SCL, I2C_FREQ);
 }
+
 // time counter (TIM0) 5ms interrupt,
 // =================================================================
 #define TIM0_COUNTER_PREIOD 5 // ms
@@ -217,6 +218,8 @@ void i2cInit()
 hw_timer_t *tim0 = NULL;
 uint16_t time50Cnt = 0;
 uint16_t time1000Cnt = 0;
+uint32_t timeSDCnt = 0;   // max 1h, 3600*1000
+uint32_t timeWiFiCnt = 0; // max 3min, 3*60*1000
 
 void IRAM_ATTR onTim0()
 {
@@ -226,8 +229,8 @@ void IRAM_ATTR onTim0()
     rgbTimeCnt += TIM0_COUNTER_PREIOD;
     time50Cnt += TIM0_COUNTER_PREIOD;
     time1000Cnt += TIM0_COUNTER_PREIOD;
-
-    // Serial.println("onTim0");
+    timeSDCnt += TIM0_COUNTER_PREIOD;
+    timeWiFiCnt += TIM0_COUNTER_PREIOD;
 }
 
 void tim0Init(void)
@@ -409,8 +412,10 @@ void updatePowerData()
     dataBuffer[18] = isCharging & 0xFF;
 
     dataBuffer[19] = config.fanPower & 0xFF;
-
     dataBuffer[20] = shutdownRequest;
+    dataBuffer[143] = config.shutdownPct;
+
+    dataBuffer[139] = DEFAULT_ON;
 
     //-------------fill data into json---------------------
     dataDoc["status"] = "true";
@@ -468,7 +473,6 @@ uint16_t lowPowerCount = 0;
 
 void lowBatHandler()
 {
-    // usb 插入时不处理
     if (isUsbPlugged)
     {
         lowPowerCount = 0;
@@ -587,48 +591,116 @@ void powerManage()
 // saveDataIntoSD
 // =================================================================
 #define HISTORY_ROOT_DIR "/history"
+static const char HISTORY_CSV_HEAD[] PROGMEM = "timesample, input_voltage, input_current"
+                                               ", battery_percentage, battery_voltage, battery_current"
+                                               ", output_voltage, output_current"
+                                               "\n";
+String lastestHistoryFile = "";
+uint16_t historyFileCount = 0;
+
 void saveDataIntoSD()
 {
+    if (!hasSD)
+    {
+        return;
+    }
+    uint64_t st = millis();
+
     char historyStr[256];
-    char strTemp[30];
-    char dir[50];
-    char path[50];
+    char fileName[15];
+    char fileDir[30];
+    char filePath[50];
     time_t timesample;
     struct tm timeinfo;
 
-    // --- get time ---
+    // Serial.printf("used4_1_1: %d\n", millis() - st); // 0ms
+    // st = millis();
+
+    // --- get date ---
     time(&timesample);
+
+    // Serial.printf("used4_1_2: %d\n", millis() - st);
+    // st = millis();
+
     getLocalTime(&timeinfo);
+
+    // Serial.printf("timesample:%d\n", timesample);
+    // char timeStr[30];
+    // strftime(timeStr, sizeof(timeStr), "%Y-%m-%d %H:%M:%S\n", &timeinfo);
+    // Serial.println(timeStr);
+    // Serial.printf("used4_1_3: %d\n", millis() - st); // 1ms
+    // st = millis();
+
+    // --- sprintf file name ---
+    char timeStr[15];
+    strftime(timeStr, sizeof(timeStr), "%Y-%m", &timeinfo);
+    sprintf(fileDir, "%s/%s", HISTORY_ROOT_DIR, timeStr);
+    strftime(fileName, sizeof(fileName), "%Y-%m-%d.csv", &timeinfo);
+    sprintf(filePath, "%s/%s", fileDir, fileName);
+
+    // Serial.printf("used4_2: %d\n", millis() - st); // 0ms
+    // st = millis();
+
+    // --- check file and file count ---
+
+    // st = millis();
+    if (lastestHistoryFile != (String)fileName)
+    {
+        lastestHistoryFile = (String)fileName;
+        if (!SD.exists(filePath))
+        {
+            appendFile(SD, filePath, HISTORY_CSV_HEAD);
+            historyFileCount += 1;
+        }
+    }
+    // Serial.printf("used4_3_2: %d\n", millis() - st); // 0ms
+
+    // st = millis();
+    // Serial.printf("historyFileCount: %d\n", historyFileCount);
+    if (historyFileCount > config.sdDataRetain)
+    {
+        // char oldestFile[30] = "\0";
+        // char oldestFilePath[50];
+        // findOldestFile(SD, HISTORY_ROOT_DIR, oldestFile, sizeof(oldestFile));
+        // if (strlen(oldestFile) > 5)
+        // {
+        //     sprintf(oldestFilePath, "%s/%s", HISTORY_ROOT_DIR, oldestFile);
+        //     deleteFile(SD, oldestFilePath);
+        //     Serial.printf("delete old File:%s\n", oldestFilePath);
+        // }
+        uint16_t dnum = deleteNFiles(SD, HISTORY_ROOT_DIR, historyFileCount - config.sdDataRetain, 2);
+        historyFileCount -= dnum;
+        Serial.printf("historyFileCount: %d\n", historyFileCount);
+    }
+
+    // Serial.printf("used4_3_3: %d\n", millis() - st); // 0ms
+
+    // Serial.printf("used4_3: %d\n", millis() - st); // 16ms
+    // st = millis();
 
     // --- sprintf date ---
 
-    // timesample, is_input_plugged_in, input_voltage, input_current,
-    // is_battery_plugged_in, battery_percentage, is_charging,
-    // battery_voltage, battery_current, output_voltage, output_current
+    // timesample, input_voltage, input_current,
+    // battery_percentage, battery_voltage, battery_current,
+    //  output_voltage, output_current
 #if 0
     sprintf(historyStr,
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d",
+            "%d,%d,%d,%d,%d,%d,%d,%d\n",
             timesample,
-            isUsbPlugged,
             usbVolt,
             usbCrnt,
-            1,
             batPct,
-            isCharging,
             batVolt,
             batCrnt,
             outputVolt,
             outputCrnt);
 #else
     sprintf(historyStr,
-            "%d,%d,%d,%d,%d,%d,%d,%d,%d,%d,%d\n",
+            "%d,%d,%d,%d,%d,%d,%d,%d\n",
             timesample,
-            isUsbPlugged,
             usbVoltAvg,
             usbCrntAvg,
-            1,
             batPct,
-            isCharging,
             batVoltAvg,
             batCrntAvg,
             outputVoltAvg,
@@ -636,22 +708,119 @@ void saveDataIntoSD()
 #endif
     // Serial.println(historyStr);
 
+    // Serial.printf("used4_4: %d\n", millis() - st); // 0ms
+    // st = millis();
+
     // --- write data into SD ---
+    appendFile(SD, filePath, historyStr);
+
+    // Serial.printf("used4_5: %d\n", millis() - st); // 25ms
+    // st = millis();
+}
+
+// sdEventHandler
+// =================================================================
+bool sdAlreadyInit = false;
+void sdEventHandler()
+{
+    if (checkSD_DT())
+    {
+        if (!hasSD && !sdAlreadyInit)
+        {
+            debug("SD_DT=true\n");
+
+            // --- reinit sd ---
+            for (int i = 0; i < 3; i++)
+            {
+                if (SD_Init())
+                    break;
+                delay(20);
+            }
+            sdAlreadyInit = true;
+
+            if (hasSD)
+            {
+                createDir(SD, HISTORY_ROOT_DIR);
+                // --- read config file form SD ---
+                // readConfigFormSD(true);
+
+                // --- history file count ---
+                historyFileCount = fileCount(SD, HISTORY_ROOT_DIR, 2);
+            }
+        }
+    }
+    else
+    {
+        if (hasSD)
+        {
+            debug("SD_DT=false\n");
+        }
+        hasSD = false;
+        sdAlreadyInit = false;
+        historyFileCount = 0;
+        lastestHistoryFile = "";
+    }
+
+    // debug("hasSD: %d, sdAlreadyInit:%d\n", hasSD, sdAlreadyInit);
+
     if (hasSD)
     {
-        // --- sprintf path ---
-        strftime(strTemp, sizeof(strTemp), "%Y-%m", &timeinfo);
-        sprintf(dir, "%s/%s", HISTORY_ROOT_DIR, strTemp);
-        strftime(strTemp, sizeof(strTemp), "%Y-%m-%d.csv", &timeinfo);
-        sprintf(path, "%s/%s", dir, strTemp);
-
-        // createDir(SD, HISTORY_ROOT_DIR);
-        createDir(SD, dir);
-        appendFile(SD, path, historyStr);
-
-        // appendFile(SD, "/2024-04-22/2024-04-22.csv", historyStr);
+        if (timeSDCnt > config.sdDataInterval * 1000)
+        {
+            // Serial.printf("timeSDCnt: %d, sdDataInterval: %d\n", timeSDCnt, config.sdDataInterval * 1000);
+            timeSDCnt = 0;
+            saveDataIntoSD();
+        }
     }
 }
+
+// wifiReconnectHandler
+// =================================================================
+#define DEFAULT_WIFI_RECONNECT_INTERVAL 2000 // 2s
+#define WIFI_RECONNECT_INTERVAL_STEP 5000    // 5s step value
+#define MAX_WIFI_RECONNECT_INTERVAL 600000   // 60s (1min)
+uint32_t wifiReconnectInterval = 0;          //
+
+void wifiReconnectHandler()
+{
+    // Serial.printf("isConnected: %d, interval: %d\n", WiFiHelper::is_connected, wifiReconnectInterval);
+    if (!WiFiHelper::is_connected && config.staENABLE)
+    {
+        // gradually increase intervals
+        if (!wifiReconnectInterval)
+        {
+            wifiReconnectInterval = DEFAULT_WIFI_RECONNECT_INTERVAL;
+        }
+
+        // reconnect
+        if (WiFiHelper::staDisconnectReason != WIFI_REASON_ASSOC_LEAVE)
+        {
+            if (timeWiFiCnt > wifiReconnectInterval)
+            {
+                if (wifiReconnectInterval >= MAX_WIFI_RECONNECT_INTERVAL)
+                {
+                    wifiReconnectInterval = MAX_WIFI_RECONNECT_INTERVAL;
+                }
+                else
+                {
+                    // wifiReconnectInterval *= 2; // exponential increment
+                    wifiReconnectInterval += WIFI_RECONNECT_INTERVAL_STEP; // constant increment
+                }
+
+                Serial.println("sta reconnecting");
+                timeWiFiCnt = 0;
+                // WiFi.reconnect();
+                WiFi.disconnect();
+                WiFi.begin();
+            }
+        }
+    }
+    else
+    {
+        wifiReconnectInterval = 0;
+    }
+}
+
 // =================================================================
 void keyEventHandler()
 {
@@ -771,8 +940,6 @@ void setup()
     // --- io init ---
     btnInit();
     powerIoInit();
-    batEN(1);
-    // powerManagerAtStart();
 
     // --- rgb led & bootRgbAnimationStop ---
     rgbLEDInit();
@@ -787,8 +954,13 @@ void setup()
     // --- peripherals init ---
     i2cInit();
     fanInit();
+    fanSet(100);
     chgCrntCtrlInit();
     tim0Init();
+
+    // --- battery capacity init ---
+    batCapacityInit();
+    powerManagerAtStart();
 
     // --- print info ---
     if (millis() - startTime < 1000)
@@ -801,21 +973,31 @@ void setup()
     Serial.printf("SPC firmware %s\n", VERSION);
     Serial.println(); // new line
 
-    // --- battery capacity init ---
-    batCapacityInit();
-
-    // --- whether ouput ---
-    powerManagerAtStart();
+    // while (1)
+    // {
+    //     delay(100);
+    // }
 
     // --- SD init & read config file form SD ---
-    SD_Init();
-    sdDetectEventInit();
+    if (checkSD_DT())
+    {
+        for (int i = 0; i < 3; i++)
+        {
+            if (SD_Init())
+                break;
+            delay(20);
+        }
+    }
+    // sdDetectEventInit();
     if (hasSD)
     {
         createDir(SD, HISTORY_ROOT_DIR);
-        listDir(SD, "/", 2);
+        // listDir(SD, "/", 2);
         // --- read config file form SD ---
         readConfigFormSD(true);
+
+        // --- history file count ---
+        historyFileCount = fileCount(SD, HISTORY_ROOT_DIR, 2);
     }
 
     // ---load config-- -
@@ -847,10 +1029,7 @@ void setup()
     // mqttClient.subscribe("test");
 
     // --- time sync ---
-    if (config.autoTimeEnable)
-    {
-        ntpTimeInit();
-    }
+    datetimeInit();
 
     // --- bootRgbAnimationStop ---
     bootRgbAnimationStop();
@@ -865,7 +1044,6 @@ void loop()
     if (time50Cnt >= 50)
     {
         time50Cnt = 0;
-
         // if (test_flag)
         // {
         //     test_flag = 0;
@@ -876,19 +1054,27 @@ void loop()
         //     test_flag = 1;
         //     testPinSet(0);
         // }
+
         updateShutdownPct();
         updateFanPower();
+        // Serial.printf("used1: %d\n", millis() - st);
+        // st = millis();
         powerManage();
+        // Serial.printf("used2: %d\n", millis() - st);
+        // st = millis();
         rgbHandler();
+        // Serial.printf("used3: %d\n", millis() - st);
+        // st = millis();
+        sdEventHandler();
+        // Serial.printf("used4: %d\n", millis() - st);
+        wifiReconnectHandler();
     }
 
     // if (time1000Cnt > 1000)
     // {
     //     Serial.printf("free: %d\n", ESP.getFreeHeap());
-
-    //     // mqttClient.publish("test", "esp32-spc");
-    //     // saveDataIntoSD();
     //     time1000Cnt = 0;
+    //     // Serial.printf("WiFi.getAutoReconnect:%d\n", WiFi.getAutoReconnect());
     //     // Serial.println("loop ...");
     // }
 
