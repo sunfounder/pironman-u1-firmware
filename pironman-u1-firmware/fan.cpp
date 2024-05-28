@@ -29,7 +29,6 @@ void fanSet(uint8_t power)
     else
     {
         crr = DAC2_START_CRR + (uint8_t)((255 - DAC2_START_CRR) * power / 100);
-        Serial.printf("set fan dac crr: %d\n", crr);
         dacWrite(FAN_PIN, crr);
     }
 
@@ -40,7 +39,6 @@ void fanSet(uint8_t power)
         power += 20;
     }
     crr = (uint8_t)(255 * power / 120);
-    Serial.printf("set fan pwm crr: %d\n", crr);
     ledcWrite(FAN_PWM_CHANNEL, crr);
 #endif
 }
