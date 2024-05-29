@@ -83,10 +83,10 @@ ADC:
 
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.9"
+#define VERSION "0.0.10"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
-#define VERSION_MICRO 9
+#define VERSION_MICRO 10
 
 #define BOARD_ID 0x00
 
@@ -960,7 +960,7 @@ void setup()
 
     // --- battery capacity init ---
     batCapacityInit();
-    powerManagerAtStart();
+    // powerManagerAtStart();
 
     // --- print info ---
     if (millis() - startTime < 1000)

@@ -65,25 +65,28 @@ void powerIoInit(void)
     pinMode(POWER_SOURCE_PIN, INPUT);
 
     // --- output ---
-#if 0
-    pinMode(DC_EN_PIN, OUTPUT);
-    digitalWrite(DC_EN_PIN, HIGH);
-
-    pinMode(USB_EN_PIN, OUTPUT);
-    digitalWrite(USB_EN_PIN, HIGH);
-
-    pinMode(BAT_EN_PIN, OUTPUT);
-    batEN(1);
-#endif
     pinMode(DC_EN_PIN, OUTPUT);
     pinMode(USB_EN_PIN, OUTPUT);
     pinMode(BAT_EN_PIN, OUTPUT);
+
     if (DEFAULT_ON)
     {
+        powerOutOpen(); // output open
+    }
+    else if (BTN)
+    {
+        powerOutOpen();
+    }
+    else
+    {
         delay(2); // software anti-shaking
-        if (DEFAULT_ON)
+        if (DEFAULT_ON || BTN)
         {
             powerOutOpen(); // output open
+        }
+        else
+        {
+            powerOutClose(); // output close
         }
     }
 }
@@ -154,6 +157,7 @@ void batEN(bool sw)
 }
 
 //------------------------
+#if 0
 void powerManagerAtStart()
 {
     batEN(1);
@@ -179,6 +183,7 @@ void powerManagerAtStart()
     // not return
     powerOutClose(); // output close
 }
+#endif
 
 /* ----------- requestShutDown -----------*/
 uint8_t shutdownRequest = 0;
@@ -496,7 +501,7 @@ void batCapacityInit()
 
     for (int i = 0; i < 10; i++)
     {
-        _sum += readBatVolt();
+        _sum += readBatVolt() - readBatCrnt() * ((float)DEFAULT_BATTERY_IR / 1000);
         delay(10);
     }
     calcedCap = batVolt2Capacity((uint16_t)(_sum / 10));
