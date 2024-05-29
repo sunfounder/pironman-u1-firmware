@@ -69,6 +69,8 @@ void powerIoInit(void)
     pinMode(USB_EN_PIN, OUTPUT);
     pinMode(BAT_EN_PIN, OUTPUT);
 
+    batEN(1);
+
     if (DEFAULT_ON)
     {
         powerOutOpen(); // output open
