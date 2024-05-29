@@ -3,6 +3,7 @@
 /Objects
 .vscode
 /test
+/compiled_bin
 web_test
 
 # Compiled source
