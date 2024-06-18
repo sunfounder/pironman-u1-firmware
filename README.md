@@ -2,12 +2,15 @@
 
 Firmware for Pironman U1
 
-## Dependent libraries
+## Compile
 
-- ArduinoJson
-- ESPAsyncWebSrv (or ESPAsyncWebServer <https://github.com/me-no-dev/ESPAsyncWebServer>)
+- Board:
+  - esp32 >= 2.0.15
+- Libraries:
+  - ArduinoJson
+  - ESPAsyncWebSrv (or ESPAsyncWebServer <https://github.com/me-no-dev/ESPAsyncWebServer>)
 
-## Programming options
+- programming options
 
 <img src="./docs/program_options.jpg"  width="66%" align="center"/>
 
