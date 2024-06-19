@@ -83,10 +83,10 @@ ADC:
 
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.10"
+#define VERSION "0.0.11"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
-#define VERSION_MICRO 10
+#define VERSION_MICRO 11
 
 #define BOARD_ID 0x00
 
@@ -190,14 +190,13 @@ void onReceive(int numBytes)
             }
         }
     }
+
+    debug("set reg addr: %d", addr);
 }
 
 void onRequest()
 {
-    // debug("onRequest: addr: ");
-    // debug(addr);
-    // debug(" , val: ");
-    // debug(dataBuffer[addr]);
+    debug("i2c onRequest: addr: %d, val: %d", addr, dataBuffer[addr]);
 
     Wire.write(dataBuffer[addr++]);
 }
@@ -245,7 +244,7 @@ void tim0Init(void)
 // =================================================================
 #define TIM3_COUNTER_PREIOD 100 // ms
 #define TIM3_DIV 80             // 80MHz / 80 = 1MHz, count plus one every us
-#define TIM3_TICKS 100000       // 5000 * us = 5ms
+#define TIM3_TICKS 100000       // 100000 * us = 100ms
 
 #define BOOT_COLOR_R 0
 #define BOOT_COLOR_G 0
@@ -869,25 +868,25 @@ void keyEventHandler()
         break;
     case DouleClicked:
         keyStateReset();
-        rgbWrite(0, 0, 255);
-        delay(100);
-        rgbClose();
-        powerOutClose();
-        pi5BtnDoubleClick();
-        while (1)
-        {
-            if (!BTN)
-            {
-                delay(5);
-                if (!BTN)
-                {
-                    delay(20);
-                    longPressTimeCnt = 0;
-                    break;
-                }
-            }
-            delay(5);
-        }
+        // rgbWrite(0, 0, 255);
+        // delay(100);
+        // rgbClose();
+        // powerOutClose();
+        // pi5BtnDoubleClick();
+        // while (1)
+        // {
+        //     if (!BTN)
+        //     {
+        //         delay(5);
+        //         if (!BTN)
+        //         {
+        //             delay(20);
+        //             longPressTimeCnt = 0;
+        //             break;
+        //         }
+        //     }
+        //     delay(5);
+        // }
         break;
     case LongPressed2S:
         rgbWrite(255, 0, 255);
@@ -897,6 +896,7 @@ void keyEventHandler()
         rgbClose();
         requestShutDown(2); // 2，button shutdown request
         rgbMode = RGB_MODE_WAIT_SHUTDOWN;
+        pi5BtnDoubleClick();
         break;
     case LongPressed5S:
         rgbWrite(255, 0, 0);
@@ -904,7 +904,6 @@ void keyEventHandler()
         delay(100);
         rgbClose();
         powerOutClose();
-        pi5BtnDoubleClick();
         while (1)
         {
             if (!BTN)
