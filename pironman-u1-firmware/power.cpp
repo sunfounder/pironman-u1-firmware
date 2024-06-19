@@ -136,11 +136,11 @@ void pi5BtnDoubleClick()
     pinMode(PI5_BTN_PIN, OUTPUT);
     //
     digitalWrite(PI5_BTN_PIN, LOW);
-    delay(50);
+    delay(100);
     digitalWrite(PI5_BTN_PIN, HIGH);
-    delay(50);
+    delay(150);
     digitalWrite(PI5_BTN_PIN, LOW);
-    delay(50);
+    delay(100);
     digitalWrite(PI5_BTN_PIN, HIGH);
     //
     pinMode(PI5_BTN_PIN, INPUT);
