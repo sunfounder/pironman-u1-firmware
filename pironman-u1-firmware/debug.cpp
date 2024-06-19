@@ -11,7 +11,7 @@ void debug(const char *msg, ...)
     char buffer[DEBUG_MAX_STR_LEN];
     vsnprintf(buffer, sizeof(buffer), msg, args);
     va_end(args);
-    Serial.print(buffer);
+    Serial.println(buffer);
 #endif
 }
 
@@ -25,7 +25,7 @@ void info(const char *msg, ...)
     char buffer[DEBUG_MAX_STR_LEN];
     vsnprintf(buffer, sizeof(buffer), msg, args);
     va_end(args);
-    Serial.print(buffer);
+    Serial.println(buffer);
 #endif
 }
 
@@ -39,6 +39,6 @@ void error(const char *msg, ...)
     char buffer[DEBUG_MAX_STR_LEN];
     vsnprintf(buffer, sizeof(buffer), msg, args);
     va_end(args);
-    Serial.print(buffer);
+    Serial.println(buffer);
 #endif
 }
