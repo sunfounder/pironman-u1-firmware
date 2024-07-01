@@ -3,6 +3,7 @@
 #include <Arduino.h>
 /* Set the Debug Level */
 #define DEBUG_LEVEL CAM_DEBUG_LEVEL_ERROR
+// #define DEBUG_LEVEL CAM_DEBUG_LEVEL_DEBUG
 #define CAM_DEBUG_LEVEL_OFF 0
 #define CAM_DEBUG_LEVEL_ERROR 1
 #define CAM_DEBUG_LEVEL_INFO 2

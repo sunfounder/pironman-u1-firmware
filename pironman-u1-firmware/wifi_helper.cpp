@@ -50,7 +50,7 @@ bool WiFiHelper::connectSTA(String ssid, String password)
 
     // Wait some time to connect to wifi
     int count = 0;
-    Serial.print("[DEBUG] Connecting.");
+    Serial.print("STA Connecting.");
     while (WiFi.status() != WL_CONNECTED)
     {
         Serial.print(".");

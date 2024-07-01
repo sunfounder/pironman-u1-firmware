@@ -616,7 +616,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   //   request->send(SPIFFS, "/www/styles.css", "text/css");
               });
 #else
-    server.on("/static/css/main.31c96fec.css", HTTP_GET,
+    server.on("/static/css/main.2024062711.css", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
                   AsyncWebServerResponse *response = request->beginChunkedResponse(
@@ -624,7 +624,7 @@ void webPageBegin(WebpageConfig *webConfig)
                       [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
                       {
                           //   debug("chunk max len: %d\n", maxLen);
-                          uint32_t size = main_31c96fec_css_gz_len - index;
+                          uint32_t size = main_2024062711_css_gz_len - index;
                           if (MAX_CHUNK_SIZE < maxLen)
                           {
                               if (size > MAX_CHUNK_SIZE)
@@ -640,7 +640,7 @@ void webPageBegin(WebpageConfig *webConfig)
                               }
                           }
                           //   debug("chunk send: %d\n", size);
-                          memcpy(buffer, main_31c96fec_css_gz + index, size);
+                          memcpy(buffer, main_2024062711_css_gz + index, size);
 
                           if (size == 0)
                           {
@@ -667,7 +667,7 @@ void webPageBegin(WebpageConfig *webConfig)
                   //   request->send(SPIFFS, "/www/script.js", "text/javascript");
               });
 #else
-    server.on("/static/js/main.235506f5.js", HTTP_GET,
+    server.on("/static/js/main.2024062711.js", HTTP_GET,
               [](AsyncWebServerRequest *request)
               {
                   _client_ip = request->client()->remoteIP().toString();
@@ -684,7 +684,7 @@ void webPageBegin(WebpageConfig *webConfig)
                       [](uint8_t *buffer, size_t maxLen, size_t index) -> size_t
                       {
                           //   debug("chunk max len: %d\n", maxLen);
-                          uint32_t size = main_235506f5_js_gz_len - index;
+                          uint32_t size = main_2024062711_js_gz_len - index;
                           if (MAX_CHUNK_SIZE < maxLen)
                           {
                               if (size > MAX_CHUNK_SIZE)
@@ -700,7 +700,7 @@ void webPageBegin(WebpageConfig *webConfig)
                               }
                           }
                           //   debug("chunk send: %d\n", size);
-                          memcpy(buffer, main_235506f5_js_gz + index, size);
+                          memcpy(buffer, main_2024062711_js_gz + index, size);
 
                           if (size == 0)
                           {

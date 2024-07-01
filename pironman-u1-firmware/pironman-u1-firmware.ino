@@ -83,7 +83,7 @@ ADC:
 
 // VERSION INFO
 // =================================================================
-#define VERSION "0.0.11"
+#define VERSION "0.0.12"
 #define VERSION_MAJOR 0
 #define VERSION_MINOR 0
 #define VERSION_MICRO 11
@@ -159,6 +159,7 @@ String myOnData()
 #define I2C_DEV_ADDR 0x5A
 
 uint8_t addr = 0;
+bool i2cOk = false;
 
 void onReceive(int numBytes)
 {
@@ -205,9 +206,26 @@ void i2cInit()
 {
     Wire.onReceive(onReceive);
     Wire.onRequest(onRequest);
-    Wire.begin((uint8_t)I2C_DEV_ADDR, I2C_SDA, I2C_SCL, I2C_FREQ);
+
+    i2cOk = Wire.begin((uint8_t)I2C_DEV_ADDR, I2C_SDA, I2C_SCL, I2C_FREQ);
+
+    // if (!i2cOk)
+    // {
+    //     rgbWrite(255, 255, 255);
+    //     delay(200);
+    // }
 }
 
+void i2cReinitHandler(void)
+{
+    if (outputState && !i2cOk)
+    {
+        Serial.println("i2c salve reinit ...");
+        Wire.onReceive(onReceive);
+        Wire.onRequest(onRequest);
+        i2cOk = Wire.begin((uint8_t)I2C_DEV_ADDR, I2C_SDA, I2C_SCL, I2C_FREQ);
+    }
+}
 // time counter (TIM0) 5ms interrupt,
 // =================================================================
 #define TIM0_COUNTER_PREIOD 5 // ms
@@ -220,6 +238,9 @@ uint16_t time1000Cnt = 0;
 uint32_t timeSDCnt = 0;   // max 1h, 3600*1000
 uint32_t timeWiFiCnt = 0; // max 3min, 3*60*1000
 
+extern int8_t ubsPwrNotEnoughCount;
+extern int16_t ubsPwrNotEnoughCountTime;
+
 void IRAM_ATTR onTim0()
 {
     keyScanTimeCnt += TIM0_COUNTER_PREIOD;
@@ -230,6 +251,10 @@ void IRAM_ATTR onTim0()
     time1000Cnt += TIM0_COUNTER_PREIOD;
     timeSDCnt += TIM0_COUNTER_PREIOD;
     timeWiFiCnt += TIM0_COUNTER_PREIOD;
+    if (ubsPwrNotEnoughCount != 0)
+    {
+        ubsPwrNotEnoughCountTime += TIM0_COUNTER_PREIOD;
+    }
 }
 
 void tim0Init(void)
@@ -303,19 +328,22 @@ void updatePowerData()
     readUsbCrnt();
     readOutputCrnt();
     checkPowerSouce();
+    updateBatIR();
     updateBatCapacity();
-    batCapacity2Pct();
+    batPct = batCapacity2Pct(batCapacity);
 
     // ---- status judgment ----
-    // isBatPlugged
-    if (batVolt > BAT_MIN_VOLTAGE)
-    {
-        isBatPlugged = true;
-    }
-    else
-    {
-        isBatPlugged = false;
-    }
+    // // isBatPlugged
+    // if (batVolt > BAT_MIN_VOLTAGE)
+    // {
+    //     isBatPlugged = true;
+    // }
+    // else
+    // {
+    //     isBatPlugged = false;
+    // }
+
+    Serial.printf("usbVolt: %d, powerSource: %d\n", usbVolt, powerSource);
 
     // isUsbPlugged
     if (usbVolt > USB_MIN_VOLTAGE)
@@ -485,8 +513,11 @@ void lowBatHandler()
             {
                 if (batPct > LOW_BATTERY_POWER_OFF)
                 {
-                    requestShutDown(1); // Low battery shutdown request
-                    rgbMode = RGB_MODE_WAIT_SHUTDOWN;
+                    if (shutdownRequest == 0)
+                    {
+                        requestShutDown(1); // Low battery shutdown request
+                        rgbMode = RGB_MODE_WAIT_SHUTDOWN;
+                    }
                 }
                 else
                 {
@@ -516,9 +547,9 @@ void shutdown()
     }
     else
     {
+        saveBatIR();
         rgbClose();
         powerOutClose();
-        saveBatCapacity();
         batEN(0);
     }
 }
@@ -565,14 +596,94 @@ void UsbUnpluggedHandler()
     }
 }
 
+/* ----------- battery Unplug and plug Handler -----------*/
+void batPlugHandler()
+{
+    if (isBatPlugged == false)
+    {
+        if (batVolt > BAT_MIN_VOLTAGE)
+        {
+            isBatPlugged = true;
+            batCapacityInit();
+        }
+    }
+}
+
+#define batUnpluggedMaxCount 5 // 50ms * 20 = 1000ms = 1s
+
+uint8_t batUnpluggedCount = 0;
+
+void batUnplugHandler()
+{
+    if (isBatPlugged == true)
+    {
+        if (batVolt < BAT_MIN_VOLTAGE || batVolt > BAT_MAX_VOLTAGE)
+        {
+            batUnpluggedCount++;
+            if (batUnpluggedCount > batUnpluggedMaxCount)
+            {
+                isBatPlugged = false;
+            }
+        }
+    }
+    else
+    {
+        batUnpluggedCount = 0;
+    }
+}
+
+/* ----------- Unhealthy power input detection -----------*/
+#define MAX_USB_PWR_NOT_ENOUGH_COUNT 3
+#define USB_PWR_NOT_ENOUGH_COUNT_INTERVAL 200 // ms
+
+int8_t ubsPwrNotEnoughCount = 0;
+int16_t ubsPwrNotEnoughCountTime = 0;
+
+void ARDUINO_ISR_ATTR usbPwrNotEnoughIrq()
+{
+    Serial.println("usbPwrNotEnoughIrq");
+    ubsPwrNotEnoughCount += 1;
+    if (ubsPwrNotEnoughCount == 1)
+    {
+        ubsPwrNotEnoughCountTime = 0;
+    }
+}
+
+void powerSourcePinInit()
+{
+    pinMode(POWER_SOURCE_PIN, INPUT);
+    attachInterrupt(POWER_SOURCE_PIN, usbPwrNotEnoughIrq, RISING);
+}
+
+void usbPwrNotEnoughHandler(void)
+{
+    if (ubsPwrNotEnoughCountTime >= 200)
+    {
+        if (ubsPwrNotEnoughCount > MAX_USB_PWR_NOT_ENOUGH_COUNT)
+        {
+            ubsPwrNotEnoughCount = 0;
+            Serial.println("xxxxxxxx1121314141");
+            usbEN(0);
+        }
+        else
+        {
+            ubsPwrNotEnoughCount = 0;
+        }
+    }
+}
+
 /* ----------- powerManage -----------*/
 void powerManage()
 {
     updatePowerData();
-    chargeAdjust(powerSource, usbVolt);
+    // chargeAdjust(powerSource, usbVolt);
+    chgCrntCtrl(1500);
+
     lowBatHandler();
-    rpiStateHandler();
+    // rpiStateHandler();
     UsbUnpluggedHandler();
+    batUnplugHandler();
+    batPlugHandler();
 
     if (outputState == 0)
     {
@@ -896,7 +1007,6 @@ void keyEventHandler()
         rgbClose();
         requestShutDown(2); // 2，button shutdown request
         rgbMode = RGB_MODE_WAIT_SHUTDOWN;
-        pi5BtnDoubleClick();
         break;
     case LongPressed5S:
         rgbWrite(255, 0, 0);
@@ -935,13 +1045,71 @@ void setup()
 
     startTime = millis();
     Serial.begin(115200);
+    Serial.setDebugOutput(true); // set log_x output to USB
 
-    // --- io init ---
+    // --- power init ---
+    batEN(1); // enable batEN, to keep battery powered
+
+    rgbLEDInit(); // rgbLEDInit
+
+    batIRInit();
+    chgCrntCtrlInit(); // disable battery charge
+    chgCrntCtrl(1500);
+
+    batCapacityInit();                     // battery capacity init
+    batPct = batCapacity2Pct(batCapacity); // battery capacity percent init
+
+    Preferences _prefs; // _shutdownPct
+    _prefs.begin(CONFIG_PREFS_NAMESPACE);
+    uint8_t _shutdownPct = _prefs.getUChar(SHUTDOWN_PCT_KEYNAME, DEFAULT_SHUTDOWN_PCT);
+
+    // if usb plug in
+    if (readUsbVolt() > USB_MIN_VOLTAGE)
+    {
+        if (DEFAULT_ON)
+        {
+            powerOutOpen();
+        }
+        else
+        {
+            powerOutClose();
+        }
+    }
+    // btn to start power
+    else
+    {
+        if (batPct > _shutdownPct + 5)
+        {
+            powerOutOpen();
+        }
+        else
+        {
+            powerOutClose();
+
+            rgbWrite(255, 0, 0); // warning
+            delay(200);
+            rgbClose();
+            delay(200);
+            rgbWrite(255, 0, 0);
+            delay(200);
+            rgbClose();
+
+            batEN(0); // disable battery powered, esp32 power outage
+
+            while (1)
+            {
+                delay(1000); // wait for the button to be released
+            }
+        }
+    }
+
+    // --- other io init ---
     btnInit();
-    powerIoInit();
+    // powerSourcePinInit();
+    pinMode(POWER_SOURCE_PIN, INPUT);
+    usbEN(0);
 
-    // --- rgb led & bootRgbAnimationStop ---
-    rgbLEDInit();
+    // bootRgbAnimation ---
     bootRGBAnimationStart();
 
     // --- fill info ---
@@ -954,28 +1122,17 @@ void setup()
     i2cInit();
     fanInit();
     fanSet(100);
-    chgCrntCtrlInit();
     tim0Init();
 
-    // --- battery capacity init ---
-    batCapacityInit();
-    // powerManagerAtStart();
-
     // --- print info ---
-    if (millis() - startTime < 1000)
+    if (millis() - startTime < 1000) // wait for PC to detect the serial port
     {
         delay(startTime + 1000 - millis());
     }
-    // delay(1000);      // wait for PC to detect the serial port
     Serial.println(); // new line
     Serial.println(F("##################################################"));
     Serial.printf("SPC firmware %s\n", VERSION);
     Serial.println(); // new line
-
-    // while (1)
-    // {
-    //     delay(100);
-    // }
 
     // --- SD init & read config file form SD ---
     if (checkSD_DT())
@@ -1040,6 +1197,8 @@ void loop()
     keyStateHandler();
     keyEventHandler();
 
+    usbPwrNotEnoughHandler();
+
     if (time50Cnt >= 50)
     {
         time50Cnt = 0;
@@ -1056,26 +1215,19 @@ void loop()
 
         updateShutdownPct();
         updateFanPower();
-        // Serial.printf("used1: %d\n", millis() - st);
-        // st = millis();
         powerManage();
-        // Serial.printf("used2: %d\n", millis() - st);
-        // st = millis();
         rgbHandler();
-        // Serial.printf("used3: %d\n", millis() - st);
-        // st = millis();
         sdEventHandler();
-        // Serial.printf("used4: %d\n", millis() - st);
         wifiReconnectHandler();
     }
 
-    // if (time1000Cnt > 1000)
-    // {
-    //     Serial.printf("free: %d\n", ESP.getFreeHeap());
-    //     time1000Cnt = 0;
-    //     // Serial.printf("WiFi.getAutoReconnect:%d\n", WiFi.getAutoReconnect());
-    //     // Serial.println("loop ...");
-    // }
+    if (time1000Cnt > 1000)
+    {
+        time1000Cnt = 0;
+
+        // Serial.printf("free: %d\n", ESP.getFreeHeap());
+        i2cReinitHandler();
+    }
 
     // TODO: if wifi disconnect, then reconnect, interval 3s
     delayMicroseconds(50);
